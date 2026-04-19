@@ -1,14 +1,6 @@
-# Copyright (c) 2022-2025, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
-# All rights reserved.
-#
-# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026, Tamir Levin.
+# SPDX-License-Identifier: Apache-2.0
 
-"""
-Python module serving as a project/extension template.
-"""
+"""volcaniarm: IsaacLab tasks for the 5-bar planar arm."""
 
-# Register Gym environments.
-from .tasks import *
-
-# Register UI extensions.
-from .ui_extension_example import *
+from .tasks import *  # noqa: F401, F403
