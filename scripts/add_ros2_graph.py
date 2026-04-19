@@ -53,6 +53,10 @@ OUT_USD = PROJECT / "assets/usd/volcaniarm_ros2.usd"
 
 WORLD_PATH = "/World"
 ROBOT_PATH = f"{WORLD_PATH}/volcaniarm"
+# The URDF converter applies PhysicsArticulationRootAPI to `root_joint`
+# (not the wrapping Xform). ArticulationController's targetPrim has to
+# point there exactly.
+ARTICULATION_ROOT_PATH = f"{ROBOT_PATH}/root_joint"
 CAMERA_LINK_PATH = f"{ROBOT_PATH}/camera_link"
 CAMERA_SENSOR_PATH = f"{CAMERA_LINK_PATH}/camera_sensor"
 GRAPH_PATH = f"{WORLD_PATH}/ROS2Graph"
@@ -98,6 +102,21 @@ def main() -> None:
     # carries it through from the base USD. Applying it again triggers
     # `UsdPhysics: Nested articulation roots are not allowed`.
     print("[add_ros2_graph] robot referenced under /World/volcaniarm", flush=True)
+
+    # The URDF converter baked stiffness=400/damping=40 into every
+    # joint drive. For the 5-bar's *passive* arm joints that's wrong —
+    # they're not stepper-driven, and the spring-back-to-zero drive
+    # fights the closure constraint (causes ~10 rad/s oscillation at
+    # rest). Zero them out here; elbows keep the active drive.
+    _passive_joints = {"volcaniarm_left_arm_joint", "volcaniarm_right_arm_joint"}
+    for prim in stage.Traverse():
+        if prim.GetName() in _passive_joints and prim.IsA(UsdPhysics.RevoluteJoint):
+            drive = UsdPhysics.DriveAPI.Apply(prim, "angular")
+            drive.CreateTypeAttr("force")
+            drive.CreateTargetPositionAttr(0.0)
+            drive.CreateStiffnessAttr(0.0)
+            drive.CreateDampingAttr(0.1)
+    print("[add_ros2_graph] passive arm joint drives zeroed", flush=True)
 
     ground = UsdGeom.Cube.Define(stage, f"{WORLD_PATH}/GroundPlane")
     ground.CreateSizeAttr(50.0)
@@ -166,9 +185,9 @@ def main() -> None:
             og.Controller.Keys.SET_VALUES: [
                 ("PublishClock.inputs:topicName", CLOCK_TOPIC),
                 ("PublishJointState.inputs:topicName", STATE_TOPIC),
-                ("PublishJointState.inputs:targetPrim", [usdrt.Sdf.Path(ROBOT_PATH)]),
+                ("PublishJointState.inputs:targetPrim", [usdrt.Sdf.Path(ARTICULATION_ROOT_PATH)]),
                 ("SubscribeJointState.inputs:topicName", CMD_TOPIC),
-                ("ArticulationController.inputs:targetPrim", [usdrt.Sdf.Path(ROBOT_PATH)]),
+                ("ArticulationController.inputs:targetPrim", [usdrt.Sdf.Path(ARTICULATION_ROOT_PATH)]),
                 (
                     "ArticulationController.inputs:jointNames",
                     ["volcaniarm_left_elbow_joint", "volcaniarm_right_elbow_joint"],
