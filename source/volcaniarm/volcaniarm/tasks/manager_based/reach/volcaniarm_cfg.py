@@ -41,9 +41,9 @@ VOLCANIARM_CFG = ArticulationCfg(
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        # Lift `base_link` so the cart's wheels sit on the ground plane.
-        # 0.88 = -min(z) of base_link.STL (cart body + caster wheels).
-        pos=(0.0, 0.0, 0.88),
+        # Lift `base_link` so the caster wheels sit on the ground plane.
+        # 0.98 = -min(z) across all cart + caster-wheel meshes.
+        pos=(0.0, 0.0, 0.98),
         joint_pos={
             "volcaniarm_left_elbow_joint": 0.0,
             "volcaniarm_right_elbow_joint": 0.0,
