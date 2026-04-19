@@ -63,11 +63,14 @@ class CommandsCfg:
         resampling_time_range=(4.0, 4.0),
         debug_vis=True,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
-            # Arm is planar in YZ (all revolute axes parallel to world X)
-            # — fix X, sweep Y/Z within a conservative workspace box.
-            pos_x=(0.0, 0.0),
-            pos_y=(-0.3, 0.3),
-            pos_z=(0.4, 0.8),
+            # Targets are in `base_link` frame. The arm is planar —
+            # left_ee_link X is fixed at +0.071 (kinematically), so we
+            # pin target X there. Y is 20 cm inside the cart's inner
+            # leg rails (legs at y=±0.698). Z spans world 0→0.6 m
+            # (cart base sits at world z=0.98, so base-frame z = world-0.98).
+            pos_x=(0.071, 0.071),
+            pos_y=(-0.50, 0.50),
+            pos_z=(-0.98, -0.38),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
