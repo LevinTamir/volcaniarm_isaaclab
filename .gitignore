@@ -1,0 +1,21 @@
+# Generated USDs — regenerate with: scripts/convert_urdf.py && scripts/close_loop.py
+assets/usd/
+
+# Training artifacts
+logs/
+outputs/
+runs/
+wandb/
+
+# Python
+__pycache__/
+*.egg-info/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Editor / local config
+.vscode/
+.idea/
+.claude/
