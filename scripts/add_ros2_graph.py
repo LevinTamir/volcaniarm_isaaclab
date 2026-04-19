@@ -35,7 +35,6 @@ from isaacsim import SimulationApp
 _app = SimulationApp({"headless": True})
 print("[add_ros2_graph] SimulationApp up", flush=True)
 
-import shutil  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 from isaacsim.core.utils import extensions  # noqa: E402
@@ -52,9 +51,11 @@ PROJECT = Path(__file__).resolve().parent.parent
 BASE_USD = PROJECT / "assets/usd/volcaniarm_closed.usd"
 OUT_USD = PROJECT / "assets/usd/volcaniarm_ros2.usd"
 
-ROBOT_PATH = "/volcaniarm"
+WORLD_PATH = "/World"
+ROBOT_PATH = f"{WORLD_PATH}/volcaniarm"
 CAMERA_LINK_PATH = f"{ROBOT_PATH}/camera_link"
 CAMERA_SENSOR_PATH = f"{CAMERA_LINK_PATH}/camera_sensor"
+GRAPH_PATH = f"{WORLD_PATH}/ROS2Graph"
 CMD_TOPIC = "/joint_commands"
 STATE_TOPIC = "/joint_states"
 CLOCK_TOPIC = "/clock"
@@ -74,31 +75,34 @@ def main() -> None:
     if OUT_USD.exists():
         OUT_USD.unlink()
 
-    # Clone the closed-loop USD to our output path, then open the COPY
-    # in context so every authoring call (pxr + og.Controller) lands in
-    # the same root layer and is persisted on Save(). This sidesteps
-    # session-layer and sublayer-composition edge cases.
-    shutil.copy(BASE_USD, OUT_USD)
+    # Author a fresh USD with /World as the default prim and everything
+    # (robot-as-reference, ground, light, camera, graph) nested under
+    # /World. That way the scene comes through identically whether the
+    # file is opened directly, passed on the command line, or added as
+    # a reference in a wrapping scene.
     ctx = omni.usd.get_context()
-    ctx.open_stage(str(OUT_USD))
+    ctx.new_stage()
     stage = ctx.get_stage()
     stage.SetEditTarget(Usd.EditTarget(stage.GetRootLayer()))
+    print("[add_ros2_graph] new stage", flush=True)
+
+    world = UsdGeom.Xform.Define(stage, WORLD_PATH)
+    stage.SetDefaultPrim(world.GetPrim())
+
+    robot_xform = UsdGeom.Xform.Define(stage, ROBOT_PATH)
+    robot_xform.GetPrim().GetReferences().AddReference(str(BASE_USD))
     _app.update()
-    print("[add_ros2_graph] opened copy", flush=True)
+    if not stage.GetPrimAtPath(ROBOT_PATH).IsValid():
+        raise RuntimeError(f"Reference to {BASE_USD.name} did not resolve at {ROBOT_PATH}")
+    print("[add_ros2_graph] robot referenced under /World/volcaniarm", flush=True)
 
-    robot_prim = stage.GetPrimAtPath(ROBOT_PATH)
-    if not robot_prim or not robot_prim.IsValid():
-        raise RuntimeError(f"Expected prim {ROBOT_PATH} not found in {OUT_USD.name}")
-    stage.SetDefaultPrim(robot_prim)
-
-    UsdGeom.Xform.Define(stage, "/World")
-    ground = UsdGeom.Cube.Define(stage, "/World/GroundPlane")
+    ground = UsdGeom.Cube.Define(stage, f"{WORLD_PATH}/GroundPlane")
     ground.CreateSizeAttr(50.0)
     UsdGeom.XformCommonAPI(ground).SetTranslate(Gf.Vec3d(0.0, 0.0, GROUND_Z - 25.0))
     UsdPhysics.CollisionAPI.Apply(ground.GetPrim())
-    print("[add_ros2_graph] ground + robot ready", flush=True)
+    print("[add_ros2_graph] ground ready", flush=True)
 
-    dome = UsdLux.DomeLight.Define(stage, "/World/DomeLight")
+    dome = UsdLux.DomeLight.Define(stage, f"{WORLD_PATH}/DomeLight")
     dome.CreateIntensityAttr(2500.0)
     dome.CreateColorAttr(Gf.Vec3f(0.75, 0.75, 0.75))
 
@@ -115,7 +119,7 @@ def main() -> None:
     print("[add_ros2_graph] camera prim defined", flush=True)
 
     og.Controller.edit(
-        {"graph_path": "/ROS2Graph", "evaluator_name": "execution"},
+        {"graph_path": GRAPH_PATH, "evaluator_name": "execution"},
         {
             og.Controller.Keys.CREATE_NODES: [
                 ("OnTick", "omni.graph.action.OnPlaybackTick"),
@@ -181,26 +185,12 @@ def main() -> None:
 
     print("[add_ros2_graph] graph built", flush=True)
 
-    # Dump what's actually under /ROS2Graph right now (pre-save).
-    print("[add_ros2_graph] /ROS2Graph tree on stage:")
-    graph_root = stage.GetPrimAtPath("/ROS2Graph")
-    if graph_root and graph_root.IsValid():
-        for p in Usd.PrimRange(graph_root):
-            print(f"  {p.GetPath()}  ({p.GetTypeName()})")
-    else:
-        print("  (missing — graph was not authored)")
+    stage.GetRootLayer().Export(str(OUT_USD))
 
-    stage.GetRootLayer().Save()
-
-    # Re-open the saved file in a separate stage to verify persistence.
     verify = Usd.Stage.Open(str(OUT_USD))
-    verify_root = verify.GetPrimAtPath("/ROS2Graph")
-    print("[add_ros2_graph] /ROS2Graph tree in saved file:")
-    if verify_root and verify_root.IsValid():
-        for p in Usd.PrimRange(verify_root):
-            print(f"  {p.GetPath()}  ({p.GetTypeName()})")
-    else:
-        print("  (missing — Save() did not persist the graph)")
+    verify_graph = verify.GetPrimAtPath(GRAPH_PATH)
+    n_nodes = sum(1 for _ in Usd.PrimRange(verify_graph)) - 1 if verify_graph and verify_graph.IsValid() else 0
+    print(f"[add_ros2_graph] saved file has {GRAPH_PATH} with {n_nodes} child nodes", flush=True)
     print(f"Wrote: {OUT_USD}")
 
 
