@@ -1079,7 +1079,7 @@
   </link>
   <joint
     name="camera_mount_linear_joint"
-    type="prismatic">
+    type="fixed">
     <origin
       xyz="0.405353761834025 0 0.039999999999992"
       rpy="0 0 0" />
@@ -1140,7 +1140,7 @@
   </link>
   <joint
     name="camera_mount_rev_joint"
-    type="revolute">
+    type="fixed">
     <origin
       xyz="0.192000000000008 0 -0.0290000000000052"
       rpy="3.14159265358979 0.211904134210419 3.14159265358979" />

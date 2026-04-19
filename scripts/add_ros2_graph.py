@@ -94,6 +94,9 @@ def main() -> None:
     _app.update()
     if not stage.GetPrimAtPath(ROBOT_PATH).IsValid():
         raise RuntimeError(f"Reference to {BASE_USD.name} did not resolve at {ROBOT_PATH}")
+    # NOTE: don't apply ArticulationRootAPI here — the reference already
+    # carries it through from the base USD. Applying it again triggers
+    # `UsdPhysics: Nested articulation roots are not allowed`.
     print("[add_ros2_graph] robot referenced under /World/volcaniarm", flush=True)
 
     ground = UsdGeom.Cube.Define(stage, f"{WORLD_PATH}/GroundPlane")
@@ -144,10 +147,11 @@ def main() -> None:
                 ("Context.outputs:context", "SubscribeJointState.inputs:context"),
                 ("ReadSimTime.outputs:simulationTime", "PublishClock.inputs:timeStamp"),
                 ("ReadSimTime.outputs:simulationTime", "PublishJointState.inputs:timeStamp"),
-                ("SubscribeJointState.outputs:jointNames", "ArticulationController.inputs:jointNames"),
+                # jointNames is NOT connected to the subscribe node — it's
+                # hard-coded below to the two elbow joints. We also only
+                # wire positionCommand (no velocity/effort); steppers on
+                # the real arm are position-controlled.
                 ("SubscribeJointState.outputs:positionCommand", "ArticulationController.inputs:positionCommand"),
-                ("SubscribeJointState.outputs:velocityCommand", "ArticulationController.inputs:velocityCommand"),
-                ("SubscribeJointState.outputs:effortCommand", "ArticulationController.inputs:effortCommand"),
                 ("OnTick.outputs:tick", "CreateRenderProduct.inputs:execIn"),
                 ("CreateRenderProduct.outputs:execOut", "CameraHelperRGB.inputs:execIn"),
                 ("CreateRenderProduct.outputs:execOut", "CameraHelperInfo.inputs:execIn"),
@@ -164,7 +168,11 @@ def main() -> None:
                 ("PublishJointState.inputs:topicName", STATE_TOPIC),
                 ("PublishJointState.inputs:targetPrim", [usdrt.Sdf.Path(ROBOT_PATH)]),
                 ("SubscribeJointState.inputs:topicName", CMD_TOPIC),
-                ("ArticulationController.inputs:robotPath", ROBOT_PATH),
+                ("ArticulationController.inputs:targetPrim", [usdrt.Sdf.Path(ROBOT_PATH)]),
+                (
+                    "ArticulationController.inputs:jointNames",
+                    ["volcaniarm_left_elbow_joint", "volcaniarm_right_elbow_joint"],
+                ),
                 ("CreateRenderProduct.inputs:cameraPrim", [usdrt.Sdf.Path(CAMERA_SENSOR_PATH)]),
                 ("CreateRenderProduct.inputs:width", CAM_WIDTH),
                 ("CreateRenderProduct.inputs:height", CAM_HEIGHT),
