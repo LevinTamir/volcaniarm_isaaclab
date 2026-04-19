@@ -115,7 +115,10 @@ class EventCfg:
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=["volcaniarm_(left|right)_elbow_joint"]),
-            "position_range": (-0.3, 0.3),
+            # Wide reset — the init pose is arm-up, targets are arm-down
+            # (~1.5 m gap), so spread starts across ±π/2 of each elbow
+            # to seed PPO with some near-target starting configurations.
+            "position_range": (-1.57, 1.57),
             "velocity_range": (0.0, 0.0),
         },
     )
