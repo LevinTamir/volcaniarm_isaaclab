@@ -61,7 +61,11 @@ CAMERA_LINK_PATH = f"{ROBOT_PATH}/camera_link"
 CAMERA_SENSOR_PATH = f"{CAMERA_LINK_PATH}/camera_sensor"
 GRAPH_PATH = f"{WORLD_PATH}/ROS2Graph"
 CMD_TOPIC = "/joint_commands"
-STATE_TOPIC = "/joint_states"
+# Isaac publishes the raw articulation state (all 4 joints) to a separate topic.
+# The ros2_control TopicBasedSystem on the ROS side consumes this; /joint_states
+# stays owned by joint_state_broadcaster (elbows) + ClosedLoopTrajectoryController
+# (passive arm + closure joints) to match the Gazebo topology.
+STATE_TOPIC = "/isaac_joint_states"
 CLOCK_TOPIC = "/clock"
 CAM_RGB_TOPIC = "color/image_raw"
 CAM_INFO_TOPIC = "color/camera_info"
