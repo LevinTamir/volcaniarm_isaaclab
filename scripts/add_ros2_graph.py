@@ -194,7 +194,11 @@ def main() -> None:
                 ("ArticulationController.inputs:targetPrim", [usdrt.Sdf.Path(ARTICULATION_ROOT_PATH)]),
                 (
                     "ArticulationController.inputs:jointNames",
-                    ["volcaniarm_left_elbow_joint", "volcaniarm_right_elbow_joint"],
+                    # Order MUST match the URDF <ros2_control> joint declaration
+                    # order, because SubscribeJointState forwards positions by
+                    # array index (not by name) into ArticulationController.
+                    # The xacro declares right_elbow first, then left_elbow.
+                    ["volcaniarm_right_elbow_joint", "volcaniarm_left_elbow_joint"],
                 ),
                 ("CreateRenderProduct.inputs:cameraPrim", [usdrt.Sdf.Path(CAMERA_SENSOR_PATH)]),
                 ("CreateRenderProduct.inputs:width", CAM_WIDTH),
