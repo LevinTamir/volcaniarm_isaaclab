@@ -142,6 +142,14 @@ def main() -> None:
     camera.CreateHorizontalApertureAttr(20.955)
     camera.CreateVerticalApertureAttr(15.2908)
     camera.CreateClippingRangeAttr(Gf.Vec2f(0.05, 50.0))
+    # USD cameras look down -Z with Y up (GL convention); ROS optical
+    # frames look +Z with Y down relative to the body camera_link (with
+    # camera_link_optical = camera_link rotated rpy=(-pi/2, 0, -pi/2)).
+    # The rotation below both aligns the sensor axes with the optical
+    # frame AND flips USD's -Z forward into the +Z that the ROS image
+    # topic expects, so /camera/color/image_raw is in
+    # camera_color_optical_frame as RViz expects.
+    UsdGeom.XformCommonAPI(camera).SetRotate(Gf.Vec3f(90.0, 0.0, -90.0))
     print("[add_ros2_graph] camera prim defined", flush=True)
 
     og.Controller.edit(
