@@ -94,16 +94,14 @@ class ActionsCfg:
 class ObservationsCfg:
     @configclass
     class PolicyCfg(ObsGroup):
-        # Only the actuated elbow joints — passive arm joints have no
-        # encoders on the real hardware, so the policy must not learn to
-        # depend on them.
+        # Actuated elbow joints only — the real ros2_control hardware
+        # exposes only these via encoders. Joint velocity is omitted
+        # because the hardware derives it by finite-differencing position
+        # (volcaniarm_hardware.cpp), which is too noisy / laggy to match
+        # Isaac's clean velocity at deployment. `last_action` already
+        # carries recent motion intent.
         joint_pos = ObsTerm(
             func=mdp.joint_pos_rel,
-            noise=Unoise(n_min=-0.01, n_max=0.01),
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["volcaniarm_(left|right)_elbow_joint"])},
-        )
-        joint_vel = ObsTerm(
-            func=mdp.joint_vel_rel,
             noise=Unoise(n_min=-0.01, n_max=0.01),
             params={"asset_cfg": SceneEntityCfg("robot", joint_names=["volcaniarm_(left|right)_elbow_joint"])},
         )
