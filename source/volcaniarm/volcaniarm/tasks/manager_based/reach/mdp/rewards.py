@@ -73,9 +73,13 @@ def joint_pos_out_of_range(
 
 def arm_crossover(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Tensor:
     # Penalty when left_arm_link crosses to the right of right_arm_link
-    # (assembly-mode flip / tangled linkage). Asset cfg must pass the
-    # body names in order [left_arm_link, right_arm_link].
+    # (assembly-mode flip / tangled linkage). Looks up bodies by exact
+    # name — don't rely on `asset_cfg.body_ids` order, because
+    # SceneEntityCfg resolves with `preserve_order=False` by default and
+    # a flipped order silently inverts the sign of this penalty.
     asset: RigidObject = env.scene[asset_cfg.name]
-    left_y = asset.data.body_pos_w[:, asset_cfg.body_ids[0], 1]
-    right_y = asset.data.body_pos_w[:, asset_cfg.body_ids[1], 1]
+    left_idx = asset.find_bodies("volcaniarm_left_arm_link")[0][0]
+    right_idx = asset.find_bodies("volcaniarm_right_arm_link")[0][0]
+    left_y = asset.data.body_pos_w[:, left_idx, 1]
+    right_y = asset.data.body_pos_w[:, right_idx, 1]
     return (left_y - right_y).clamp(min=0.0)

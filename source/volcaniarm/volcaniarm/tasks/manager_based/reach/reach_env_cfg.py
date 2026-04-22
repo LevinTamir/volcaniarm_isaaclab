@@ -172,13 +172,14 @@ class RewardsCfg:
     # Penalty for crossed-assembly-mode configurations where the knees
     # swap sides (arms tangled / self-intersecting). Zero in well-behaved
     # configs; linear in the crossover distance when the linkage flips.
+    # Weight reduced to -0.3 — previous -1.0 was comparable in magnitude
+    # to 2× the entire reach reward, which can bully the policy into odd
+    # local minima.
     arm_crossover = RewTerm(
         func=mdp.arm_crossover,
-        weight=-1.0,
+        weight=-0.3,
         params={
-            "asset_cfg": SceneEntityCfg(
-                "robot",
-                body_names=["volcaniarm_left_arm_link", "volcaniarm_right_arm_link"]),
+            "asset_cfg": SceneEntityCfg("robot"),
         },
     )
     # Disabled: the working-range penalty (±π/3) was fighting with reach
