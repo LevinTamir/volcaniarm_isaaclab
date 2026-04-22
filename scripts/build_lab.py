@@ -50,10 +50,14 @@ PEGBOARD_COLOR = Gf.Vec3f(0.18, 0.42, 0.68)  # workshop blue
 BENCH_TOP_COLOR = Gf.Vec3f(0.45, 0.32, 0.20) # brown wood
 BENCH_LEG_COLOR = Gf.Vec3f(0.30, 0.30, 0.32) # dark grey metal
 DESK_TOP_COLOR = Gf.Vec3f(0.55, 0.40, 0.25)  # lighter wood
-STOOL_COLOR = Gf.Vec3f(0.15, 0.15, 0.15)     # black
-STOOL_SEAT_COLOR = Gf.Vec3f(0.85, 0.75, 0.15)  # yellow
-VASE_COLOR = Gf.Vec3f(0.08, 0.08, 0.08)      # black
-PLANT_COLOR = Gf.Vec3f(0.12, 0.55, 0.15)     # leaf green
+POT_COLOR = Gf.Vec3f(0.55, 0.30, 0.18)       # terracotta
+POT_RIM_COLOR = Gf.Vec3f(0.60, 0.35, 0.22)   # slightly lighter rim
+
+# NVIDIA Omniverse sample-asset S3 root (Isaac Sim 5.1 bundle). Kit resolves
+# http(s) asset URLs and caches them locally on first load, so referencing
+# by URL keeps the scene self-contained in git while giving us real meshes.
+NVIDIA_ASSET_ROOT = "https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/5.1"
+PLANT_USD = f"{NVIDIA_ASSET_ROOT}/NVIDIA/Assets/Vegetation/Plant_Tropical/Japanese_Painted_Fern.usd"
 
 LIGHT_COLOR = Gf.Vec3f(1.00, 0.98, 0.95)
 LIGHT_INTENSITY = 5000.0
@@ -207,56 +211,48 @@ def _add_desk(overlay):
         )
 
 
-def _add_stool(overlay):
-    # Wheeled workshop stool off to the west, clear of the robot's swept area.
-    base_r, base_h = 0.25, 0.03
-    post_r, post_h = 0.03, 0.40
-    seat_r, seat_h = 0.17, 0.05
-    x, y = -2.4, -1.6
-
-    _add_cylinder(
-        overlay, f"{LAB_PATH}/StoolBase",
-        radius=base_r, height=base_h,
-        translate=(x, y, FLOOR_Z_TOP + base_h / 2.0),
-        color=STOOL_COLOR,
-    )
-    _add_cylinder(
-        overlay, f"{LAB_PATH}/StoolPost",
-        radius=post_r, height=post_h,
-        translate=(x, y, FLOOR_Z_TOP + base_h + post_h / 2.0),
-        color=STOOL_COLOR,
-    )
-    _add_cylinder(
-        overlay, f"{LAB_PATH}/StoolSeat",
-        radius=seat_r, height=seat_h,
-        translate=(x, y, FLOOR_Z_TOP + base_h + post_h + seat_h / 2.0),
-        color=STOOL_SEAT_COLOR,
-    )
-
-
 def _add_potted_plant(overlay):
-    # Pose matches Gazebo lab.sdf weed_target: (-0.12, 0.25, 0) in world where
-    # the Gazebo floor is z=0. Translate into Isaac by setting base at
-    # FLOOR_Z_TOP. Dimensions copied from lab.sdf: vase radius 0.04, height
-    # 0.15. Plant foliage is a green sphere sitting on the vase top (the
-    # Gazebo version loads a .dae mesh; primitives keep build_lab.py free of
-    # asset-conversion plumbing and still read as a potted plant).
+    # XY pose matches Gazebo lab.sdf weed_target (-0.12, 0.25) — the two sims
+    # share a visual reference. A terracotta pot is authored as primitives;
+    # the foliage is a reference to NVIDIA's Japanese Painted Fern asset
+    # from the Isaac Sim sample bucket, scaled down to look like a small
+    # indoor plant rather than outdoor landscaping.
     x, y = -0.12, 0.25
-    vase_r, vase_h = 0.04, 0.15
-    foliage_r = 0.07
+    pot_r_outer, pot_r_inner, pot_h = 0.11, 0.095, 0.15
+    rim_h = 0.015
 
+    # Pot body — solid cylinder. Inner cavity isn't modeled since the
+    # foliage covers the top; one cylinder reads as a pot from the outside.
     _add_cylinder(
-        overlay, f"{LAB_PATH}/PlantVase",
-        radius=vase_r, height=vase_h,
-        translate=(x, y, FLOOR_Z_TOP + vase_h / 2.0),
-        color=VASE_COLOR,
+        overlay, f"{LAB_PATH}/PlantPot",
+        radius=pot_r_outer, height=pot_h,
+        translate=(x, y, FLOOR_Z_TOP + pot_h / 2.0),
+        color=POT_COLOR,
     )
-    _add_sphere(
-        overlay, f"{LAB_PATH}/PlantFoliage",
-        radius=foliage_r,
-        translate=(x, y, FLOOR_Z_TOP + vase_h + foliage_r * 0.85),
-        color=PLANT_COLOR,
-        scale=(1.0, 1.0, 1.15),  # slightly taller than wide — bush shape
+    # Rim ring on top for a bit of silhouette (stack a slightly wider thin disc)
+    _add_cylinder(
+        overlay, f"{LAB_PATH}/PlantPotRim",
+        radius=pot_r_outer + 0.008, height=rim_h,
+        translate=(x, y, FLOOR_Z_TOP + pot_h - rim_h / 2.0),
+        color=POT_RIM_COLOR,
+    )
+
+    # Foliage — reference the NVIDIA plant USD and scale it down. The ref'd
+    # asset has its own xformOps, so use named AddTranslateOp/AddScaleOp
+    # (XformCommonAPI silently no-ops when the reference carries xformOp:orient
+    # instead of rotateXYZ — same trap we hit on the robot lift).
+    foliage_path = f"{LAB_PATH}/PlantFoliage"
+    foliage = overlay.DefinePrim(foliage_path, "Xform")
+    foliage.GetReferences().AddReference(PLANT_USD)
+
+    foliage_scale = 0.35      # NVIDIA plants are sized for outdoor scenes;
+                              # this shrinks it to a ~desk-plant footprint
+    foliage_xformable = UsdGeom.Xformable(foliage)
+    foliage_xformable.AddTranslateOp(opSuffix="place").Set(
+        Gf.Vec3d(x, y, FLOOR_Z_TOP + pot_h - 0.02)  # base slightly inside pot
+    )
+    foliage_xformable.AddScaleOp(opSuffix="shrink").Set(
+        Gf.Vec3f(foliage_scale, foliage_scale, foliage_scale)
     )
 
 
@@ -327,7 +323,6 @@ def main() -> None:
     ceiling_center_z = _add_room_shell(overlay)
     _add_workbench(overlay)
     _add_desk(overlay)
-    _add_stool(overlay)
     _add_potted_plant(overlay)
     _add_ceiling_light(overlay, ceiling_center_z)
     _add_named_view_camera(overlay)

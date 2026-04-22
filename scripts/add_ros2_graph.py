@@ -75,7 +75,11 @@ CAM_FRAME = "camera_color_optical_frame"
 CAM_WIDTH = 640
 CAM_HEIGHT = 480
 GROUND_Z = 0.0           # floor at world z=0
-ROBOT_BASE_Z = 0.98      # base_link sits this high; cart wheels then touch z=0
+# Cart geometry bbox min is z=-0.98 in base_link frame (caster-wheel bottom).
+# Lifting base_link by a small extra ~wheel-radius (0.04 m) leaves a visible
+# clearance under the wheels rather than a zero-overlap contact, which reads
+# as "sitting on the floor" instead of "sunk into it".
+ROBOT_BASE_Z = 1.02
 
 
 def main() -> None:
