@@ -45,8 +45,11 @@ VOLCANIARM_CFG = ArticulationCfg(
         # 0.98 = -min(z) across all cart + caster-wheel meshes.
         pos=(0.0, 0.0, 0.98),
         joint_pos={
-            "volcaniarm_left_elbow_joint": 0.0,
-            "volcaniarm_right_elbow_joint": 0.0,
+            # Centered inside the mechanical limits (right: [π/4, 8π/9],
+            # left: [-8π/9, -π/4]). Sets the arm in its natural splayed
+            # configuration so the closure constraint resolves cleanly.
+            "volcaniarm_left_elbow_joint": -1.5707963267948966,   # -π/2
+            "volcaniarm_right_elbow_joint": 1.5707963267948966,   # +π/2
             "volcaniarm_left_arm_joint": 0.0,
             "volcaniarm_right_arm_joint": 0.0,
         },

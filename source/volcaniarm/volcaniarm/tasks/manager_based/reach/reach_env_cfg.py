@@ -125,10 +125,11 @@ class EventCfg:
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=["volcaniarm_(left|right)_elbow_joint"]),
-            # Wide reset — the init pose is arm-up, targets are arm-down
-            # (~1.5 m gap), so spread starts across ±π/2 of each elbow
-            # to seed PPO with some near-target starting configurations.
-            "position_range": (-1.57, 1.57),
+            # Offset range narrowed to ±π/4 (45°) so reset stays inside the
+            # mechanical limits: default ± π/4 = [π/4, 3π/4] (right) and
+            # [-3π/4, -π/4] (left). Both fall within the new [π/4, 8π/9]
+            # and [-8π/9, -π/4] joint limits with margin.
+            "position_range": (-0.7853981633974483, 0.7853981633974483),
             "velocity_range": (0.0, 0.0),
         },
     )
