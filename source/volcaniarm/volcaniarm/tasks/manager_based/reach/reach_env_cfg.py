@@ -70,7 +70,7 @@ class CommandsCfg:
             # (cart base sits at world z=0.98, so base-frame z = world-0.98).
             pos_x=(0.071, 0.071),
             pos_y=(-0.50, 0.50),
-            pos_z=(-0.98, -0.38),
+            pos_z=(-0.98, -0.78),   # world z: 0 → 0.20 m (near-ground targets)
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
@@ -162,15 +162,15 @@ class RewardsCfg:
             "command_name": "ee_pose",
         },
     )
-    # Actuated elbow joints: measured ±65° mechanical range.
+    # Actuated elbow joints: ±75° working range.
     elbow_pos_in_range = RewTerm(
         func=mdp.joint_pos_out_of_range,
         weight=-1.0,
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=["volcaniarm_(left|right)_elbow_joint"]),
-            "low": -1.1344640137963142,   # -65°
-            "high": 1.1344640137963142,   # +65°
+            "low": -1.3089969389957472,   # -75°
+            "high": 1.3089969389957472,   # +75°
         },
     )
     # Passive arm_joints: measured range [-90°, +50°] (asymmetric).
