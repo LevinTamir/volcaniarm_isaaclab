@@ -124,9 +124,9 @@ class EventCfg:
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=["volcaniarm_(left|right)_elbow_joint"]),
-            # Wide reset across ±π/2 of each elbow to seed PPO with a
-            # variety of starting configurations.
-            "position_range": (-1.57, 1.57),
+            # Reset offset kept inside the ±65° (±1.1345 rad) mechanical
+            # limits with ~14° of margin on each side.
+            "position_range": (-0.9, 0.9),
             "velocity_range": (0.0, 0.0),
         },
     )
@@ -134,9 +134,11 @@ class EventCfg:
 
 @configclass
 class RewardsCfg:
-    # Baseline reward: EE position tracking only. Everything else is
-    # disabled so we can isolate whether the core reach signal works
-    # before layering on constraints (elbow-up, self-collision, etc).
+    # Baseline reward: EE position tracking + a soft penalty for elbow
+    # joint excursions beyond the measured ±65° mechanical range.
+    # URDF keeps wide limits so PhysX's closure-constraint solver stays
+    # stable — we teach the policy to respect the working range via the
+    # soft penalty instead.
     end_effector_position_tracking = RewTerm(
         func=mdp.position_command_error,
         weight=-0.2,
@@ -158,6 +160,28 @@ class RewardsCfg:
             "asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"]),
             "std": 0.05,
             "command_name": "ee_pose",
+        },
+    )
+    # Actuated elbow joints: measured ±65° mechanical range.
+    elbow_pos_in_range = RewTerm(
+        func=mdp.joint_pos_out_of_range,
+        weight=-1.0,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=["volcaniarm_(left|right)_elbow_joint"]),
+            "low": -1.1344640137963142,   # -65°
+            "high": 1.1344640137963142,   # +65°
+        },
+    )
+    # Passive arm_joints: measured range [-90°, +50°] (asymmetric).
+    arm_pos_in_range = RewTerm(
+        func=mdp.joint_pos_out_of_range,
+        weight=-1.0,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=["volcaniarm_(left|right)_arm_joint"]),
+            "low": -1.5707963267948966,   # -90°  (-π/2)
+            "high": 0.8726646259971648,   # +50°
         },
     )
 

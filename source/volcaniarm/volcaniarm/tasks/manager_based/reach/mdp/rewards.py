@@ -43,3 +43,18 @@ def position_command_error_tanh(
     curr_pos_w = asset.data.body_pos_w[:, asset_cfg.body_ids[0]]
     distance = torch.norm(curr_pos_w - des_pos_w, dim=1)
     return 1 - torch.tanh(distance / std)
+
+
+def joint_pos_out_of_range(
+    env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg, low: float, high: float
+) -> torch.Tensor:
+    # Linear hinge per selected joint: max(0, q-high) + max(0, low-q),
+    # summed across joints. Zero inside [low, high]; grows linearly
+    # outside. URDF keeps wide ±π limits so the closure-constraint
+    # solver stays stable; this soft penalty teaches the policy to stay
+    # within the mechanical operating range (±65° measured in Isaac Sim).
+    asset: RigidObject = env.scene[asset_cfg.name]
+    q = asset.data.joint_pos[:, asset_cfg.joint_ids]
+    above = (q - high).clamp(min=0.0)
+    below = (low - q).clamp(min=0.0)
+    return (above + below).sum(dim=1)
