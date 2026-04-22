@@ -184,6 +184,21 @@ class RewardsCfg:
             "asset_cfg": SceneEntityCfg("robot"),
         },
     )
+    # Passive arm_joint (knee) range penalty: discourages actuator
+    # commands that push the closure linkage into near-singular /
+    # infeasible configurations. Soft penalty only — hard limits on
+    # passive joints fight with the PhysX closure constraint solver.
+    # Placeholder range ±π/2; narrow once verified in Isaac Sim.
+    arm_joint_in_range = RewTerm(
+        func=mdp.joint_pos_out_of_range,
+        weight=-1.0,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=["volcaniarm_(left|right)_arm_joint"]),
+            "low": -1.5707963267948966,   # -π/2
+            "high": 1.5707963267948966,   # +π/2
+        },
+    )
     # Disabled: the working-range penalty (±π/3) was fighting with reach
     # before the policy even learned to track. Re-enable as a polish reward
     # after reach is working.
