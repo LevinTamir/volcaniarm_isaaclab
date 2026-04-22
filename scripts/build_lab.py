@@ -136,28 +136,29 @@ def _add_room_shell(overlay):
 
 
 def _add_workbench(overlay):
-    # North-wall workbench: 3 m wide, 0.7 m deep, top at 0.9 m above floor.
-    # Pegboard panel behind rises 1.2 m up the wall.
-    bench_w, bench_d, bench_h = 3.0, 0.7, 0.05
+    # West-wall workbench — behind the robot (robot faces +X). 3 m long along
+    # the wall (Y axis), 0.7 m deep out from the wall (X axis), top 0.9 m up.
+    # Blue pegboard panel mounted flush to the wall behind it.
+    bench_l, bench_d, bench_th = 3.0, 0.7, 0.05  # length-along-wall, depth, top thickness
     top_z = FLOOR_Z_TOP + 0.90
-    y_center = ROOM_HALF - bench_d / 2.0 - 0.02  # 2 cm clear of wall
+    x_center = -(ROOM_HALF - bench_d / 2.0 - 0.02)  # 2 cm clear of wall
 
     _add_box(
         overlay, f"{LAB_PATH}/BenchTop",
-        scale=(bench_w, bench_d, bench_h),
-        translate=(0.0, y_center, top_z - bench_h / 2.0),
+        scale=(bench_d, bench_l, bench_th),
+        translate=(x_center, 0.0, top_z - bench_th / 2.0),
         color=BENCH_TOP_COLOR,
     )
 
-    leg_h = top_z - bench_h - FLOOR_Z_TOP
+    leg_h = top_z - bench_th - FLOOR_Z_TOP
     leg_size = 0.05
     leg_z = FLOOR_Z_TOP + leg_h / 2.0
-    leg_x = bench_w / 2.0 - leg_size
-    leg_y_front = y_center - bench_d / 2.0 + leg_size / 2.0
-    leg_y_back = y_center + bench_d / 2.0 - leg_size / 2.0
+    leg_y = bench_l / 2.0 - leg_size
+    leg_x_front = x_center - bench_d / 2.0 + leg_size / 2.0
+    leg_x_back = x_center + bench_d / 2.0 - leg_size / 2.0
     for i, (lx, ly) in enumerate([
-        (leg_x, leg_y_front), (-leg_x, leg_y_front),
-        (leg_x, leg_y_back), (-leg_x, leg_y_back),
+        (leg_x_front, leg_y), (leg_x_front, -leg_y),
+        (leg_x_back, leg_y), (leg_x_back, -leg_y),
     ]):
         _add_box(
             overlay, f"{LAB_PATH}/BenchLeg{i}",
@@ -166,42 +167,43 @@ def _add_workbench(overlay):
             color=BENCH_LEG_COLOR,
         )
 
-    peg_w, peg_h, peg_thickness = bench_w, 1.2, 0.03
+    peg_l, peg_h, peg_thickness = bench_l, 1.2, 0.03
     peg_bottom = top_z + 0.02
     peg_center_z = peg_bottom + peg_h / 2.0
-    peg_y = ROOM_HALF - peg_thickness / 2.0 - 0.001  # flush to wall, no z-fight
+    peg_x = -(ROOM_HALF - peg_thickness / 2.0 - 0.001)  # flush to wall, no z-fight
     _add_box(
         overlay, f"{LAB_PATH}/Pegboard",
-        scale=(peg_w, peg_thickness, peg_h),
-        translate=(0.0, peg_y, peg_center_z),
+        scale=(peg_thickness, peg_l, peg_h),
+        translate=(peg_x, 0.0, peg_center_z),
         color=PEGBOARD_COLOR,
     )
 
 
 def _add_desk(overlay):
-    # Smaller desk along the east wall (camera sits to the right of robot).
-    desk_w, desk_d, desk_h = 1.4, 0.6, 0.05
+    # North-wall desk — side wall relative to the robot's forward axis.
+    # 1.4 m long along X, 0.6 m deep out from the wall.
+    desk_w, desk_d, desk_th = 1.4, 0.6, 0.05
     top_z = FLOOR_Z_TOP + 0.75
-    x_center = ROOM_HALF - desk_d / 2.0 - 0.02
-    y_center = -1.5  # offset from centerline so it's visible past the robot
+    y_center = ROOM_HALF - desk_d / 2.0 - 0.02
+    x_center = 1.5  # offset from centerline so it sits clear of the arm sweep
 
     _add_box(
         overlay, f"{LAB_PATH}/DeskTop",
-        scale=(desk_d, desk_w, desk_h),
-        translate=(x_center, y_center, top_z - desk_h / 2.0),
+        scale=(desk_w, desk_d, desk_th),
+        translate=(x_center, y_center, top_z - desk_th / 2.0),
         color=DESK_TOP_COLOR,
     )
 
-    leg_h = top_z - desk_h - FLOOR_Z_TOP
+    leg_h = top_z - desk_th - FLOOR_Z_TOP
     leg_size = 0.04
     leg_z = FLOOR_Z_TOP + leg_h / 2.0
-    lx_back = x_center + desk_d / 2.0 - leg_size / 2.0
-    lx_front = x_center - desk_d / 2.0 + leg_size / 2.0
-    ly_plus = y_center + desk_w / 2.0 - leg_size
-    ly_minus = y_center - desk_w / 2.0 + leg_size
+    ly_front = y_center - desk_d / 2.0 + leg_size / 2.0
+    ly_back = y_center + desk_d / 2.0 - leg_size / 2.0
+    lx_plus = x_center + desk_w / 2.0 - leg_size
+    lx_minus = x_center - desk_w / 2.0 + leg_size
     for i, (lx, ly) in enumerate([
-        (lx_back, ly_plus), (lx_back, ly_minus),
-        (lx_front, ly_plus), (lx_front, ly_minus),
+        (lx_plus, ly_front), (lx_plus, ly_back),
+        (lx_minus, ly_front), (lx_minus, ly_back),
     ]):
         _add_box(
             overlay, f"{LAB_PATH}/DeskLeg{i}",
@@ -216,8 +218,9 @@ def _add_potted_plant(overlay):
     # share a visual reference. Terracotta pot as primitives; foliage is a
     # reference to NVIDIA's Japanese Painted Fern, drastically shrunk.
     x, y = -0.12, 0.25
-    pot_r_outer, pot_h = 0.08, 0.12
-    rim_r, rim_h = 0.088, 0.012
+    # 40% smaller than the previous (0.08 / 0.12 / 0.088 / 0.012) sizing
+    pot_r_outer, pot_h = 0.048, 0.072
+    rim_r, rim_h = 0.053, 0.007
 
     _add_cylinder(
         overlay, f"{LAB_PATH}/PlantPot",
@@ -237,11 +240,11 @@ def _add_potted_plant(overlay):
     # outdoor landscape use). Scale to a 35 cm tabletop plant and offset
     # the translate so the scaled asset's lowest point sits just below the
     # pot rim (a small bury reads as "stems in soil").
-    PLANT_TARGET_H = 0.35
+    PLANT_TARGET_H = 0.21       # 40% smaller than the previous 0.35 m
     PLANT_NATIVE_H = 27.2
     PLANT_NATIVE_MIN_Z = -2.29
-    plant_scale = PLANT_TARGET_H / PLANT_NATIVE_H          # ~0.0129
-    bury = 0.02
+    plant_scale = PLANT_TARGET_H / PLANT_NATIVE_H          # ~0.0077
+    bury = 0.012
     pot_top_z = FLOOR_Z_TOP + pot_h
     plant_z = pot_top_z - plant_scale * PLANT_NATIVE_MIN_Z - bury
 
