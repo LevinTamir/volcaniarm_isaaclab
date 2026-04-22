@@ -171,19 +171,32 @@ class RewardsCfg:
         weight=-0.0001,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
-    # Penalty for crossed-assembly-mode configurations where the knees
-    # swap sides (arms tangled / self-intersecting). Zero in well-behaved
-    # configs; linear in the crossover distance when the linkage flips.
-    # Weight reduced to -0.3 — previous -1.0 was comparable in magnitude
-    # to 2× the entire reach reward, which can bully the policy into odd
-    # local minima.
-    arm_crossover = RewTerm(
-        func=mdp.arm_crossover,
-        weight=-0.3,
+    # Self-collision avoidance via inter-link COM distance. Penalizes
+    # when any cross-side link pair (left_elbow ↔ right_{elbow,arm},
+    # left_arm ↔ right_{elbow,arm}) gets closer than `min_distance`.
+    # Generalizes arm_crossover (now disabled) — catches all near-
+    # collisions, not just topological side-swaps.
+    link_proximity = RewTerm(
+        func=mdp.link_pair_proximity,
+        weight=-1.0,
         params={
             "asset_cfg": SceneEntityCfg("robot"),
+            "pairs": [
+                ("volcaniarm_left_elbow_link", "volcaniarm_right_elbow_link"),
+                ("volcaniarm_left_elbow_link", "volcaniarm_right_arm_link"),
+                ("volcaniarm_left_arm_link", "volcaniarm_right_elbow_link"),
+                ("volcaniarm_left_arm_link", "volcaniarm_right_arm_link"),
+            ],
+            "min_distance": 0.15,   # 15 cm — adjust once we see the signal
         },
     )
+    # Disabled — superseded by link_proximity. Re-enable only if the
+    # proximity term misses a specific crossed topology.
+    # arm_crossover = RewTerm(
+    #     func=mdp.arm_crossover,
+    #     weight=-0.3,
+    #     params={"asset_cfg": SceneEntityCfg("robot")},
+    # )
     # Passive arm_joint (knee) range penalty: discourages actuator
     # commands that push the closure linkage into near-singular /
     # infeasible configurations. Soft penalty only — hard limits on

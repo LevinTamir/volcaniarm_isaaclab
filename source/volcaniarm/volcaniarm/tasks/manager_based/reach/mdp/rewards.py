@@ -98,3 +98,24 @@ def closure_body_distance(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> 
     left_pos = asset.data.body_pos_w[:, left_idx]
     right_pos = asset.data.body_pos_w[:, right_idx]
     return torch.norm(left_pos - right_pos, dim=-1)
+
+
+def link_pair_proximity(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg,
+    pairs: list,
+    min_distance: float,
+) -> torch.Tensor:
+    # Self-collision proxy: sum over all given body pairs of
+    # max(0, min_distance - ||com_a - com_b||). Zero when all pairs are
+    # farther apart than `min_distance`; grows linearly as any pair
+    # approaches. Uses body centers of mass (in world frame).
+    asset: RigidObject = env.scene[asset_cfg.name]
+    com_pos = asset.data.body_com_pos_w  # (N, num_bodies, 3)
+    penalties = []
+    for name_a, name_b in pairs:
+        a_idx = asset.find_bodies(name_a)[0][0]
+        b_idx = asset.find_bodies(name_b)[0][0]
+        d = torch.norm(com_pos[:, a_idx] - com_pos[:, b_idx], dim=-1)
+        penalties.append((min_distance - d).clamp(min=0.0))
+    return torch.stack(penalties, dim=-1).sum(dim=-1)
