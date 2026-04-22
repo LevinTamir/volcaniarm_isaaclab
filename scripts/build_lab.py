@@ -34,7 +34,7 @@ BASE_USD = PROJECT / "assets/usd/volcaniarm_ros2.usd"
 OVERLAY_USD = PROJECT / "assets/usd/volcaniarm_lab.usd"
 
 LAB_PATH = "/World/Lab"
-FLOOR_Z_TOP = -0.97          # ~1 cm above grey-ground top (-0.98), dodges z-fight
+FLOOR_Z_TOP = 0.01           # 1 cm above grey-ground top (z=0), dodges z-fight
 ROOM_HALF = 4.0              # interior half-width → 8x8 m room
 WALL_THICKNESS = 0.1
 WALL_HEIGHT = 3.5
@@ -59,8 +59,10 @@ LIGHT_INTENSITY = 5000.0
 
 # Default viewport pose — front-right of the arm, slightly above, aimed
 # at the end-effector height. Echoes the angle in the reference photo.
-VIEW_POS = Gf.Vec3d(2.0, -2.5, 0.55)
-VIEW_TARGET = Gf.Vec3d(0.0, 0.0, 0.15)
+# Base_link now lives at z=0.98, so the arm's working volume is roughly
+# z in [0.98, 1.5]; target and camera pulled up to match.
+VIEW_POS = Gf.Vec3d(2.0, -2.5, 1.5)
+VIEW_TARGET = Gf.Vec3d(0.0, 0.0, 1.1)
 
 
 def _add_box(stage, path, scale, translate, color):

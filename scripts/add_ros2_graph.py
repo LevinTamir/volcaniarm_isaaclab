@@ -74,7 +74,8 @@ CAM_NAMESPACE = "camera"
 CAM_FRAME = "camera_color_optical_frame"
 CAM_WIDTH = 640
 CAM_HEIGHT = 480
-GROUND_Z = -0.98  # matches -min(z) of cart + caster wheel meshes
+GROUND_Z = 0.0           # floor at world z=0
+ROBOT_BASE_Z = 0.98      # base_link sits this high; cart wheels then touch z=0
 
 
 def main() -> None:
@@ -99,6 +100,10 @@ def main() -> None:
 
     robot_xform = UsdGeom.Xform.Define(stage, ROBOT_PATH)
     robot_xform.GetPrim().GetReferences().AddReference(str(BASE_USD))
+    # Cart wheels hang ~0.98 m below base_link; lifting base_link by that
+    # amount puts the wheels on the ground plane at z=0 (clean world
+    # convention: floor at 0, not at -0.98).
+    UsdGeom.XformCommonAPI(robot_xform).SetTranslate(Gf.Vec3d(0.0, 0.0, ROBOT_BASE_Z))
     _app.update()
     if not stage.GetPrimAtPath(ROBOT_PATH).IsValid():
         raise RuntimeError(f"Reference to {BASE_USD.name} did not resolve at {ROBOT_PATH}")
