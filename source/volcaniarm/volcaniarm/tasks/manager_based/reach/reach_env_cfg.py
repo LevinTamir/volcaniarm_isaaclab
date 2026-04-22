@@ -137,14 +137,16 @@ class EventCfg:
 
 @configclass
 class RewardsCfg:
+    # === Goal 1: EE reaches the desired location ===
+    #
+    # Three complementary terms: L2 negative-distance for a gradient at
+    # any range, plus two tanh shapings — broad (std=0.3) for workspace-
+    # wide attraction, fine (std=0.05) for precision near the target.
     end_effector_position_tracking = RewTerm(
         func=mdp.position_command_error,
         weight=-0.2,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"]), "command_name": "ee_pose"},
     )
-    # Broad tanh shaping — std=0.3 so gradient reaches across the whole
-    # target box (previously std=0.1 only gave signal within 30 cm, but
-    # the policy was 50 cm out on average).
     end_effector_position_tracking_tanh_broad = RewTerm(
         func=mdp.position_command_error_tanh,
         weight=0.1,
@@ -154,8 +156,6 @@ class RewardsCfg:
             "command_name": "ee_pose",
         },
     )
-    # Sharp tanh shaping near target — rewards fine-grained final approach
-    # on top of the broad attractor.
     end_effector_position_tracking_tanh_fine = RewTerm(
         func=mdp.position_command_error_tanh,
         weight=0.3,
@@ -165,17 +165,27 @@ class RewardsCfg:
             "command_name": "ee_pose",
         },
     )
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
-    joint_vel = RewTerm(
-        func=mdp.joint_vel_l2,
-        weight=-0.0001,
-        params={"asset_cfg": SceneEntityCfg("robot")},
+
+    # === Goal 2: Avoid elbow-down assembly mode ===
+    #
+    # Rewards mean knee Z above the base — both 5-bar assembly modes
+    # reach the same EE pose, so tracking alone is ambiguous between
+    # them. This term breaks the tie toward elbow-up.
+    elbow_up = RewTerm(
+        func=mdp.elbow_up_posture,
+        weight=0.5,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", body_names=["volcaniarm_(left|right)_arm_link"]),
+        },
     )
-    # Self-collision avoidance via inter-link COM distance. Penalizes
-    # when any cross-side link pair (left_elbow ↔ right_{elbow,arm},
-    # left_arm ↔ right_{elbow,arm}) gets closer than `min_distance`.
-    # Generalizes arm_crossover (now disabled) — catches all near-
-    # collisions, not just topological side-swaps.
+
+    # === Goal 3: Avoid self-collision ===
+    #
+    # Sums max(0, 0.15 - ||com_a - com_b||) over the four cross-side
+    # link pairs. Zero when every pair is ≥ 15 cm apart at the COM;
+    # grows as any pair approaches. Threshold tunable — bump to 0.20
+    # if you see collisions, drop to 0.10 if it's blocking reach.
     link_proximity = RewTerm(
         func=mdp.link_pair_proximity,
         weight=-1.0,
@@ -187,63 +197,38 @@ class RewardsCfg:
                 ("volcaniarm_left_arm_link", "volcaniarm_right_elbow_link"),
                 ("volcaniarm_left_arm_link", "volcaniarm_right_arm_link"),
             ],
-            "min_distance": 0.15,   # 15 cm — adjust once we see the signal
+            "min_distance": 0.15,
         },
     )
-    # Disabled — superseded by link_proximity. Re-enable only if the
-    # proximity term misses a specific crossed topology.
-    # arm_crossover = RewTerm(
-    #     func=mdp.arm_crossover,
-    #     weight=-0.3,
-    #     params={"asset_cfg": SceneEntityCfg("robot")},
-    # )
-    # Passive arm_joint (knee) range penalty: discourages actuator
-    # commands that push the closure linkage into near-singular /
-    # infeasible configurations. Soft penalty only — hard limits on
-    # passive joints fight with the PhysX closure constraint solver.
-    # Placeholder range ±π/2; narrow once verified in Isaac Sim.
-    arm_joint_in_range = RewTerm(
-        func=mdp.joint_pos_out_of_range,
-        weight=-1.0,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=["volcaniarm_(left|right)_arm_joint"]),
-            "low": -1.5707963267948966,   # -π/2
-            "high": 1.5707963267948966,   # +π/2
-        },
-    )
-    # Closure-constraint violation penalty. closure_joint is
-    # excludeFromArticulation=True so we can't read its joint_pos
-    # directly; the cleanest proxy is the L2 distance between the two
-    # EE frames it constrains to coincide. Zero in feasible configs;
-    # grows as the linkage approaches / enters infeasibility.
-    closure_violation = RewTerm(
-        func=mdp.closure_body_distance,
-        weight=-5.0,
+
+    # === Minor support (smoothness) ===
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
+    joint_vel = RewTerm(
+        func=mdp.joint_vel_l2,
+        weight=-0.0001,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
-    # Disabled: the working-range penalty (±π/3) was fighting with reach
-    # before the policy even learned to track. Re-enable as a polish reward
-    # after reach is working.
+
+    # --- Previously tried, disabled now ---
+    # Redundant with hard URDF limits on actuated joints + closure physics:
+    # arm_joint_in_range = RewTerm(
+    #     func=mdp.joint_pos_out_of_range, weight=-1.0,
+    #     params={"asset_cfg": SceneEntityCfg("robot",
+    #         joint_names=["volcaniarm_(left|right)_arm_joint"]),
+    #         "low": -1.5707963267948966, "high": 1.5707963267948966})
+    # closure_violation = RewTerm(
+    #     func=mdp.closure_body_distance, weight=-5.0,
+    #     params={"asset_cfg": SceneEntityCfg("robot")})
+    # Superseded by link_proximity (general) and elbow_up:
+    # arm_crossover = RewTerm(
+    #     func=mdp.arm_crossover, weight=-0.3,
+    #     params={"asset_cfg": SceneEntityCfg("robot")})
+    # Early working-range attempt (fought with reach):
     # joint_pos_in_range = RewTerm(
-    #     func=mdp.joint_pos_out_of_range,
-    #     weight=-1.0,
-    #     params={
-    #         "asset_cfg": SceneEntityCfg(
-    #             "robot", joint_names=["volcaniarm_(left|right)_elbow_joint"]),
-    #         "low": -1.047,   # -π/3
-    #         "high": 1.047,   # +π/3
-    #     },
-    # )
-    # Disabled for now — first training run with this term didn't produce a
-    # clearly-better policy. Keep the reward function in mdp/rewards.py so
-    # we can re-enable (maybe with a different weight, or the signed-joint-
-    # angle variant) after a baseline run without it.
-    # elbow_up = RewTerm(
-    #     func=mdp.elbow_up_posture,
-    #     weight=0.2,
-    #     params={"asset_cfg": SceneEntityCfg("robot", body_names=["volcaniarm_(left|right)_arm_link"])},
-    # )
+    #     func=mdp.joint_pos_out_of_range, weight=-1.0,
+    #     params={"asset_cfg": SceneEntityCfg("robot",
+    #         joint_names=["volcaniarm_(left|right)_elbow_joint"]),
+    #         "low": -1.047, "high": 1.047})
 
 
 @configclass
