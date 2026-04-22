@@ -22,7 +22,7 @@ _app = AppLauncher(headless=True).app
 from math import cos, sin
 from pathlib import Path
 
-from pxr import Gf, Sdf, Usd, UsdPhysics
+from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
 
 PROJECT = Path(__file__).resolve().parent.parent
 BASE_USD = PROJECT / "assets/usd/volcaniarm.usd"
@@ -49,6 +49,11 @@ def main() -> None:
     if OVERLAY_USD.exists():
         OVERLAY_USD.unlink()
     overlay = Usd.Stage.CreateNew(str(OVERLAY_USD))
+    # Pixar USD's `Usd.Stage.CreateNew` defaults to Y-up with mpu=0.01 — both
+    # wrong for this content (authored Z-up in meters). Force-set so anyone
+    # who opens this USD directly in Kit sees it upright at real scale.
+    UsdGeom.SetStageUpAxis(overlay, UsdGeom.Tokens.z)
+    UsdGeom.SetStageMetersPerUnit(overlay, 1.0)
     overlay.GetRootLayer().subLayerPaths.append(f"./{BASE_USD.name}")
 
     overlay_root = overlay.OverridePrim(root_path)

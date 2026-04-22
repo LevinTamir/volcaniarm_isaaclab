@@ -34,7 +34,8 @@ BASE_USD = PROJECT / "assets/usd/volcaniarm_ros2.usd"
 OVERLAY_USD = PROJECT / "assets/usd/volcaniarm_lab.usd"
 
 LAB_PATH = "/World/Lab"
-FLOOR_Z_TOP = 0.01           # 1 cm above grey-ground top (z=0), dodges z-fight
+FLOOR_Z_TOP = 0.001          # 1 mm above grey-ground top (z=0) — just enough
+                             # to dodge z-fight without a visible step under the wheels
 ROOM_HALF = 4.0              # interior half-width → 8x8 m room
 WALL_THICKNESS = 0.1
 WALL_HEIGHT = 3.5
@@ -311,6 +312,11 @@ def main() -> None:
     if OVERLAY_USD.exists():
         OVERLAY_USD.unlink()
     overlay = Usd.Stage.CreateNew(str(OVERLAY_USD))
+    # Pixar USD's `Usd.Stage.CreateNew` defaults to Y-up with mpu=0.01 — both
+    # wrong for this content (authored Z-up in meters). Without these lines
+    # the lab opens rotated and scaled 100x when sublayered onto Z-up _ros2.
+    UsdGeom.SetStageUpAxis(overlay, UsdGeom.Tokens.z)
+    UsdGeom.SetStageMetersPerUnit(overlay, 1.0)
     overlay.GetRootLayer().subLayerPaths.append(f"./{BASE_USD.name}")
 
     overlay_root = overlay.OverridePrim(root_path)
