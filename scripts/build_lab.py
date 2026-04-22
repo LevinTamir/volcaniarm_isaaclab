@@ -213,46 +213,46 @@ def _add_desk(overlay):
 
 def _add_potted_plant(overlay):
     # XY pose matches Gazebo lab.sdf weed_target (-0.12, 0.25) — the two sims
-    # share a visual reference. A terracotta pot is authored as primitives;
-    # the foliage is a reference to NVIDIA's Japanese Painted Fern asset
-    # from the Isaac Sim sample bucket, scaled down to look like a small
-    # indoor plant rather than outdoor landscaping.
+    # share a visual reference. Terracotta pot as primitives; foliage is a
+    # reference to NVIDIA's Japanese Painted Fern, drastically shrunk.
     x, y = -0.12, 0.25
-    pot_r_outer, pot_r_inner, pot_h = 0.11, 0.095, 0.15
-    rim_h = 0.015
+    pot_r_outer, pot_h = 0.08, 0.12
+    rim_r, rim_h = 0.088, 0.012
 
-    # Pot body — solid cylinder. Inner cavity isn't modeled since the
-    # foliage covers the top; one cylinder reads as a pot from the outside.
     _add_cylinder(
         overlay, f"{LAB_PATH}/PlantPot",
         radius=pot_r_outer, height=pot_h,
         translate=(x, y, FLOOR_Z_TOP + pot_h / 2.0),
         color=POT_COLOR,
     )
-    # Rim ring on top for a bit of silhouette (stack a slightly wider thin disc)
     _add_cylinder(
         overlay, f"{LAB_PATH}/PlantPotRim",
-        radius=pot_r_outer + 0.008, height=rim_h,
+        radius=rim_r, height=rim_h,
         translate=(x, y, FLOOR_Z_TOP + pot_h - rim_h / 2.0),
         color=POT_RIM_COLOR,
     )
 
-    # Foliage — reference the NVIDIA plant USD and scale it down. The ref'd
-    # asset has its own xformOps, so use named AddTranslateOp/AddScaleOp
-    # (XformCommonAPI silently no-ops when the reference carries xformOp:orient
-    # instead of rotateXYZ — same trap we hit on the robot lift).
-    foliage_path = f"{LAB_PATH}/PlantFoliage"
-    foliage = overlay.DefinePrim(foliage_path, "Xform")
-    foliage.GetReferences().AddReference(PLANT_USD)
+    # Japanese Painted Fern native bbox measured empirically: ~27 m tall,
+    # origin is ~2.29 m above the geometry's bottom (asset is authored for
+    # outdoor landscape use). Scale to a 35 cm tabletop plant and offset
+    # the translate so the scaled asset's lowest point sits just below the
+    # pot rim (a small bury reads as "stems in soil").
+    PLANT_TARGET_H = 0.35
+    PLANT_NATIVE_H = 27.2
+    PLANT_NATIVE_MIN_Z = -2.29
+    plant_scale = PLANT_TARGET_H / PLANT_NATIVE_H          # ~0.0129
+    bury = 0.02
+    pot_top_z = FLOOR_Z_TOP + pot_h
+    plant_z = pot_top_z - plant_scale * PLANT_NATIVE_MIN_Z - bury
 
-    foliage_scale = 0.35      # NVIDIA plants are sized for outdoor scenes;
-                              # this shrinks it to a ~desk-plant footprint
-    foliage_xformable = UsdGeom.Xformable(foliage)
-    foliage_xformable.AddTranslateOp(opSuffix="place").Set(
-        Gf.Vec3d(x, y, FLOOR_Z_TOP + pot_h - 0.02)  # base slightly inside pot
-    )
-    foliage_xformable.AddScaleOp(opSuffix="shrink").Set(
-        Gf.Vec3f(foliage_scale, foliage_scale, foliage_scale)
+    # Reference + scale via named ops (not XformCommonAPI — the referenced
+    # asset has xformOp:orient which breaks XformCommonAPI's expected schema).
+    foliage = overlay.DefinePrim(f"{LAB_PATH}/PlantFoliage", "Xform")
+    foliage.GetReferences().AddReference(PLANT_USD)
+    foliage_xf = UsdGeom.Xformable(foliage)
+    foliage_xf.AddTranslateOp(opSuffix="place").Set(Gf.Vec3d(x, y, plant_z))
+    foliage_xf.AddScaleOp(opSuffix="shrink").Set(
+        Gf.Vec3f(plant_scale, plant_scale, plant_scale)
     )
 
 
