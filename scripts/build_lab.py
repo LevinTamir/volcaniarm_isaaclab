@@ -57,6 +57,11 @@ PLANT_COLOR = Gf.Vec3f(0.12, 0.55, 0.15)     # leaf green
 LIGHT_COLOR = Gf.Vec3f(1.00, 0.98, 0.95)
 LIGHT_INTENSITY = 5000.0
 
+# Default viewport pose — front-right of the arm, slightly above, aimed
+# at the end-effector height. Echoes the angle in the reference photo.
+VIEW_POS = Gf.Vec3d(2.0, -2.5, 0.55)
+VIEW_TARGET = Gf.Vec3d(0.0, 0.0, 0.15)
+
 
 def _add_box(stage, path, scale, translate, color):
     cube = UsdGeom.Cube.Define(stage, path)
@@ -264,6 +269,34 @@ def _add_ceiling_light(overlay, ceiling_center_z):
     )
 
 
+def _add_named_view_camera(overlay):
+    # Scene camera at the same pose as the Perspective viewport seed, so
+    # there's a named camera in the dropdown to snap back to.
+    cam = UsdGeom.Camera.Define(overlay, f"{LAB_PATH}/LabView")
+    cam.CreateFocalLengthAttr(24.0)
+    cam.CreateClippingRangeAttr(Gf.Vec2f(0.05, 100.0))
+
+    view = Gf.Matrix4d()
+    view.SetLookAt(VIEW_POS, VIEW_TARGET, Gf.Vec3d(0.0, 0.0, 1.0))
+    cam.MakeMatrixXform().Set(view.GetInverse())
+
+
+def _seed_viewport_pose(overlay):
+    # Omniverse/Kit honors `customLayerData.cameraSettings` to seed the
+    # viewport's default Perspective camera when a stage is first opened.
+    # Without this the stock Kit start pose is far out and off-axis for
+    # this scene.
+    overlay.GetRootLayer().customLayerData = {
+        "cameraSettings": {
+            "Perspective": {
+                "position": VIEW_POS,
+                "target": VIEW_TARGET,
+            },
+            "boundCamera": "/OmniverseKit_Persp",
+        }
+    }
+
+
 def main() -> None:
     base_stage = Usd.Stage.Open(str(BASE_USD))
     if base_stage is None:
@@ -289,6 +322,8 @@ def main() -> None:
     _add_stool(overlay)
     _add_potted_plant(overlay)
     _add_ceiling_light(overlay, ceiling_center_z)
+    _add_named_view_camera(overlay)
+    _seed_viewport_pose(overlay)
 
     overlay.Save()
     print(f"Wrote: {OVERLAY_USD}")
