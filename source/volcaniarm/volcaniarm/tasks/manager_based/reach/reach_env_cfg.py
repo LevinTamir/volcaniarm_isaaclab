@@ -137,11 +137,13 @@ class EventCfg:
 
 @configclass
 class RewardsCfg:
-    # === Goal 1: EE reaches the desired location ===
+    # === Goal 1: EE reaches the desired location (PRIMARY) ===
     #
-    # Three complementary terms: L2 negative-distance for a gradient at
-    # any range, plus two tanh shapings — broad (std=0.3) for workspace-
-    # wide attraction, fine (std=0.05) for precision near the target.
+    # Weights heavily boosted — reach is the #1 task and must dominate
+    # the penalty terms. Max positive contribution at target ≈ +4.0/step
+    # (+1440/episode), out-signaling any realistic penalty combination.
+    # L2 distance for far-range gradient, broad tanh for workspace-wide
+    # attraction, fine tanh for precision near the target.
     end_effector_position_tracking = RewTerm(
         func=mdp.position_command_error,
         weight=-0.2,
@@ -149,7 +151,7 @@ class RewardsCfg:
     )
     end_effector_position_tracking_tanh_broad = RewTerm(
         func=mdp.position_command_error_tanh,
-        weight=0.1,
+        weight=1.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"]),
             "std": 0.3,
@@ -158,7 +160,7 @@ class RewardsCfg:
     )
     end_effector_position_tracking_tanh_fine = RewTerm(
         func=mdp.position_command_error_tanh,
-        weight=0.3,
+        weight=3.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"]),
             "std": 0.05,
