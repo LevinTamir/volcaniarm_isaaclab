@@ -54,3 +54,18 @@ def elbow_up_posture(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch
     knee_z = asset.data.body_pos_w[:, asset_cfg.body_ids, 2]
     base_z = asset.data.root_pos_w[:, 2:3]
     return (knee_z - base_z).mean(dim=1)
+
+
+def joint_pos_out_of_range(
+    env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg, low: float, high: float
+) -> torch.Tensor:
+    # Linear hinge on each selected joint: max(0, q-high) + max(0, low-q),
+    # summed across the selected joints. Zero inside [low, high]; grows
+    # linearly outside. Used to keep the actuated 5-bar elbows within a
+    # "working range" narrower than the URDF limits, where the linkage is
+    # well away from singular configurations.
+    asset: RigidObject = env.scene[asset_cfg.name]
+    q = asset.data.joint_pos[:, asset_cfg.joint_ids]
+    above = (q - high).clamp(min=0.0)
+    below = (low - q).clamp(min=0.0)
+    return (above + below).sum(dim=1)

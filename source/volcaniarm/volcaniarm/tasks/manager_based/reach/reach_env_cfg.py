@@ -155,6 +155,19 @@ class RewardsCfg:
         weight=-0.0001,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
+    # Keep the actuated elbows in a "working range" narrower than the URDF
+    # limits (±π). Start with ±π/3 (≈60°); widen later if the policy can
+    # reach fine and we're not running into singular linkage configurations.
+    joint_pos_in_range = RewTerm(
+        func=mdp.joint_pos_out_of_range,
+        weight=-1.0,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=["volcaniarm_(left|right)_elbow_joint"]),
+            "low": -1.047,   # -π/3
+            "high": 1.047,   # +π/3
+        },
+    )
     # Disabled for now — first training run with this term didn't produce a
     # clearly-better policy. Keep the reward function in mdp/rewards.py so
     # we can re-enable (maybe with a different weight, or the signed-joint-
