@@ -155,11 +155,15 @@ class RewardsCfg:
         weight=-0.0001,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
-    elbow_up = RewTerm(
-        func=mdp.elbow_up_posture,
-        weight=0.2,
-        params={"asset_cfg": SceneEntityCfg("robot", body_names=["volcaniarm_(left|right)_arm_link"])},
-    )
+    # Disabled for now — first training run with this term didn't produce a
+    # clearly-better policy. Keep the reward function in mdp/rewards.py so
+    # we can re-enable (maybe with a different weight, or the signed-joint-
+    # angle variant) after a baseline run without it.
+    # elbow_up = RewTerm(
+    #     func=mdp.elbow_up_posture,
+    #     weight=0.2,
+    #     params={"asset_cfg": SceneEntityCfg("robot", body_names=["volcaniarm_(left|right)_arm_link"])},
+    # )
 
 
 @configclass
