@@ -66,12 +66,11 @@ class CommandsCfg:
             # Targets are in `base_link` frame. The arm is planar —
             # left_ee_link X is fixed at +0.071 (kinematically), so we
             # pin target X there. Y is 20 cm inside the cart's inner
-            # leg rails (legs at y=±0.698). Z spans world 0→0.2 m
-            # (cart base sits at world z=0.98, so base-frame z = world-0.98):
-            # the weed-detection use case has targets at ground level.
+            # leg rails (legs at y=±0.698). Z spans world 0→0.6 m
+            # (cart base sits at world z=0.98, so base-frame z = world-0.98).
             pos_x=(0.071, 0.071),
             pos_y=(-0.50, 0.50),
-            pos_z=(-0.98, -0.78),
+            pos_z=(-0.98, -0.38),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
@@ -125,11 +124,9 @@ class EventCfg:
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=["volcaniarm_(left|right)_elbow_joint"]),
-            # Offset range narrowed to ±π/4 (45°) so reset stays inside the
-            # mechanical limits: default ± π/4 = [π/4, 3π/4] (right) and
-            # [-3π/4, -π/4] (left). Both fall within the new [π/4, 8π/9]
-            # and [-8π/9, -π/4] joint limits with margin.
-            "position_range": (-0.7853981633974483, 0.7853981633974483),
+            # Wide reset across ±π/2 of each elbow to seed PPO with a
+            # variety of starting configurations.
+            "position_range": (-1.57, 1.57),
             "velocity_range": (0.0, 0.0),
         },
     )
@@ -137,13 +134,9 @@ class EventCfg:
 
 @configclass
 class RewardsCfg:
-    # === Goal 1: EE reaches the desired location (PRIMARY) ===
-    #
-    # Weights heavily boosted — reach is the #1 task and must dominate
-    # the penalty terms. Max positive contribution at target ≈ +4.0/step
-    # (+1440/episode), out-signaling any realistic penalty combination.
-    # L2 distance for far-range gradient, broad tanh for workspace-wide
-    # attraction, fine tanh for precision near the target.
+    # Baseline reward: EE position tracking only. Everything else is
+    # disabled so we can isolate whether the core reach signal works
+    # before layering on constraints (elbow-up, self-collision, etc).
     end_effector_position_tracking = RewTerm(
         func=mdp.position_command_error,
         weight=-0.2,
@@ -168,69 +161,20 @@ class RewardsCfg:
         },
     )
 
-    # === Goal 2: Avoid elbow-down assembly mode ===
-    #
-    # Rewards mean knee Z above the base — both 5-bar assembly modes
-    # reach the same EE pose, so tracking alone is ambiguous between
-    # them. This term breaks the tie toward elbow-up.
-    elbow_up = RewTerm(
-        func=mdp.elbow_up_posture,
-        weight=0.5,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot", body_names=["volcaniarm_(left|right)_arm_link"]),
-        },
-    )
-
-    # === Goal 3: Avoid self-collision ===
-    #
-    # Sums max(0, 0.15 - ||com_a - com_b||) over the four cross-side
-    # link pairs. Zero when every pair is ≥ 15 cm apart at the COM;
-    # grows as any pair approaches. Threshold tunable — bump to 0.20
-    # if you see collisions, drop to 0.10 if it's blocking reach.
-    link_proximity = RewTerm(
-        func=mdp.link_pair_proximity,
-        weight=-1.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot"),
-            "pairs": [
-                ("volcaniarm_left_elbow_link", "volcaniarm_right_elbow_link"),
-                ("volcaniarm_left_elbow_link", "volcaniarm_right_arm_link"),
-                ("volcaniarm_left_arm_link", "volcaniarm_right_elbow_link"),
-                ("volcaniarm_left_arm_link", "volcaniarm_right_arm_link"),
-            ],
-            "min_distance": 0.15,
-        },
-    )
-
-    # === Minor support (smoothness) ===
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
-    joint_vel = RewTerm(
-        func=mdp.joint_vel_l2,
-        weight=-0.0001,
-        params={"asset_cfg": SceneEntityCfg("robot")},
-    )
-
-    # --- Previously tried, disabled now ---
-    # Redundant with hard URDF limits on actuated joints + closure physics:
-    # arm_joint_in_range = RewTerm(
-    #     func=mdp.joint_pos_out_of_range, weight=-1.0,
+    # --- Disabled — layer back in after baseline works ---
+    # elbow_up = RewTerm(func=mdp.elbow_up_posture, weight=0.5,
     #     params={"asset_cfg": SceneEntityCfg("robot",
-    #         joint_names=["volcaniarm_(left|right)_arm_joint"]),
-    #         "low": -1.5707963267948966, "high": 1.5707963267948966})
-    # closure_violation = RewTerm(
-    #     func=mdp.closure_body_distance, weight=-5.0,
+    #         body_names=["volcaniarm_(left|right)_arm_link"])})
+    # link_proximity = RewTerm(func=mdp.link_pair_proximity, weight=-1.0,
+    #     params={"asset_cfg": SceneEntityCfg("robot"),
+    #         "pairs": [("volcaniarm_left_elbow_link", "volcaniarm_right_elbow_link"),
+    #                   ("volcaniarm_left_elbow_link", "volcaniarm_right_arm_link"),
+    #                   ("volcaniarm_left_arm_link", "volcaniarm_right_elbow_link"),
+    #                   ("volcaniarm_left_arm_link", "volcaniarm_right_arm_link")],
+    #         "min_distance": 0.15})
+    # action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
+    # joint_vel = RewTerm(func=mdp.joint_vel_l2, weight=-0.0001,
     #     params={"asset_cfg": SceneEntityCfg("robot")})
-    # Superseded by link_proximity (general) and elbow_up:
-    # arm_crossover = RewTerm(
-    #     func=mdp.arm_crossover, weight=-0.3,
-    #     params={"asset_cfg": SceneEntityCfg("robot")})
-    # Early working-range attempt (fought with reach):
-    # joint_pos_in_range = RewTerm(
-    #     func=mdp.joint_pos_out_of_range, weight=-1.0,
-    #     params={"asset_cfg": SceneEntityCfg("robot",
-    #         joint_names=["volcaniarm_(left|right)_elbow_joint"]),
-    #         "low": -1.047, "high": 1.047})
 
 
 @configclass
