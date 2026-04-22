@@ -217,7 +217,7 @@ def _add_potted_plant(overlay):
     # XY pose matches Gazebo lab.sdf weed_target (-0.12, 0.25) — the two sims
     # share a visual reference. Terracotta pot as primitives; foliage is a
     # reference to NVIDIA's Japanese Painted Fern, drastically shrunk.
-    x, y = -0.12, 0.25
+    x, y = -0.02, 0.25     # shifted +0.10 m in X from Gazebo weed_target pose
     # 40% smaller than the previous (0.08 / 0.12 / 0.088 / 0.012) sizing
     pot_r_outer, pot_h = 0.048, 0.072
     rim_r, rim_h = 0.053, 0.007
