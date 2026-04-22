@@ -43,3 +43,14 @@ def position_command_error_tanh(
     curr_pos_w = asset.data.body_pos_w[:, asset_cfg.body_ids[0]]
     distance = torch.norm(curr_pos_w - des_pos_w, dim=1)
     return 1 - torch.tanh(distance / std)
+
+
+def elbow_up_posture(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    # Mean knee Z (passive arm_joint origins, i.e. the arm_link body
+    # frames) above the robot base. Both 5-bar assembly modes can reach
+    # the same EE pose, so the position-tracking reward alone is
+    # ambiguous between them — this term breaks the tie toward elbow-up.
+    asset: RigidObject = env.scene[asset_cfg.name]
+    knee_z = asset.data.body_pos_w[:, asset_cfg.body_ids, 2]
+    base_z = asset.data.root_pos_w[:, 2:3]
+    return (knee_z - base_z).mean(dim=1)
