@@ -66,11 +66,12 @@ class CommandsCfg:
             # Targets are in `base_link` frame. The arm is planar —
             # left_ee_link X is fixed at +0.071 (kinematically), so we
             # pin target X there. Y is 20 cm inside the cart's inner
-            # leg rails (legs at y=±0.698). Z spans world 0→0.6 m
-            # (cart base sits at world z=0.98, so base-frame z = world-0.98).
+            # leg rails (legs at y=±0.698). Z spans world 0→0.2 m
+            # (cart base sits at world z=0.98, so base-frame z = world-0.98):
+            # the weed-detection use case has targets at ground level.
             pos_x=(0.071, 0.071),
             pos_y=(-0.50, 0.50),
-            pos_z=(-0.98, -0.38),
+            pos_z=(-0.98, -0.78),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
