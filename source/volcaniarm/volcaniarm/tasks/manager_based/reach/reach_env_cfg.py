@@ -199,6 +199,16 @@ class RewardsCfg:
             "high": 1.5707963267948966,   # +π/2
         },
     )
+    # Closure-constraint violation penalty. closure_joint is
+    # excludeFromArticulation=True so we can't read its joint_pos
+    # directly; the cleanest proxy is the L2 distance between the two
+    # EE frames it constrains to coincide. Zero in feasible configs;
+    # grows as the linkage approaches / enters infeasibility.
+    closure_violation = RewTerm(
+        func=mdp.closure_body_distance,
+        weight=-5.0,
+        params={"asset_cfg": SceneEntityCfg("robot")},
+    )
     # Disabled: the working-range penalty (±π/3) was fighting with reach
     # before the policy even learned to track. Re-enable as a polish reward
     # after reach is working.

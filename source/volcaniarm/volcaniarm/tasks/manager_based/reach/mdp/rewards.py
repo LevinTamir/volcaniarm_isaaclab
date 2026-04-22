@@ -83,3 +83,18 @@ def arm_crossover(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Te
     left_y = asset.data.body_pos_w[:, left_idx, 1]
     right_y = asset.data.body_pos_w[:, right_idx, 1]
     return (left_y - right_y).clamp(min=0.0)
+
+
+def closure_body_distance(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    # L2 distance between left_ee_link and right_ee_link. These two
+    # frames are pinned together by `closure_joint` (a revolute joint
+    # with `excludeFromArticulation=True`). In a feasible config the
+    # solver keeps them coincident; any growing distance means the
+    # actuators are commanding a pose the closure can't satisfy, i.e.,
+    # the linkage is in an infeasible configuration.
+    asset: RigidObject = env.scene[asset_cfg.name]
+    left_idx = asset.find_bodies("left_ee_link")[0][0]
+    right_idx = asset.find_bodies("right_ee_link")[0][0]
+    left_pos = asset.data.body_pos_w[:, left_idx]
+    right_pos = asset.data.body_pos_w[:, right_idx]
+    return torch.norm(left_pos - right_pos, dim=-1)
