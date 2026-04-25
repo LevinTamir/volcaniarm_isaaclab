@@ -65,12 +65,14 @@ class CommandsCfg:
         ranges=mdp.UniformPoseCommandCfg.Ranges(
             # Targets are in `base_link` frame. The arm is planar —
             # left_ee_link X is fixed at +0.071 (kinematically), so we
-            # pin target X there. Y is 20 cm inside the cart's inner
-            # leg rails (legs at y=±0.698). Z spans world 0→0.6 m
-            # (cart base sits at world z=0.98, so base-frame z = world-0.98).
+            # pin target X there. Y spans the cart's inner leg rails
+            # (legs at y=±0.698). Z covers the weed-reach band: weeds
+            # grow 20-30 cm tall from the ground, so the EE needs to
+            # reach roughly 15-30 cm above ground (world z 0.15→0.30 m).
+            # Base sits at world z=0.98 → base-frame z = world-0.98.
             pos_x=(0.071, 0.071),
             pos_y=(-0.50, 0.50),
-            pos_z=(-0.90, -0.58),
+            pos_z=(-0.83, -0.68),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
