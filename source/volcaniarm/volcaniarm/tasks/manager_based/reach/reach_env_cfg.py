@@ -208,6 +208,16 @@ class RewardsCfg:
         params={"term_keys": "stuck"},
     )
 
+    # Smoothness penalties — tiny weights but they keep the policy from
+    # outputting jittery actions. Without these the deployed motion looks
+    # noticeably shaky even though the policy reaches targets correctly.
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
+    joint_vel = RewTerm(
+        func=mdp.joint_vel_l2,
+        weight=-0.0001,
+        params={"asset_cfg": SceneEntityCfg("robot")},
+    )
+
     # --- Disabled — layer back in if needed ---
     # action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
     # joint_vel = RewTerm(func=mdp.joint_vel_l2, weight=-0.0001,
