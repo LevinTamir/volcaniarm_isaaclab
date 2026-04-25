@@ -15,7 +15,6 @@ import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
-from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
@@ -207,27 +206,6 @@ class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
 
 
-@configclass
-class CurriculumCfg:
-    # Curriculum currently disabled — tested with z target (-0.83, -0.68)
-    # and the policy overfit to the easy phase, then regressed as the
-    # box expanded. Full distribution training works better.
-    pass
-    # expand_targets = CurrTerm(
-    #     func=mdp.expand_ee_target_box,
-    #     params={
-    #         "command_name": "ee_pose",
-    #         "start_iter": 100,
-    #         "end_iter": 300,
-    #         "y_start": 0.10,
-    #         "y_end": 0.45,
-    #         "z_start": (-0.78, -0.78),
-    #         "z_end": (-0.83, -0.68),
-    #         "num_steps_per_env": 32,
-    #     },
-    # )
-
-
 ##
 # Environment configuration
 ##
@@ -241,7 +219,6 @@ class VolcaniarmReachEnvCfg(ManagerBasedRLEnvCfg):
     commands: CommandsCfg = CommandsCfg()
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
-    curriculum: CurriculumCfg = CurriculumCfg()
     events: EventCfg = EventCfg()
 
     def __post_init__(self):
