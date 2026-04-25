@@ -18,8 +18,8 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         init_noise_std=0.3,
         actor_obs_normalization=True,
         critic_obs_normalization=True,
-        actor_hidden_dims=[64, 64],
-        critic_hidden_dims=[64, 64],
+        actor_hidden_dims=[32, 32],
+        critic_hidden_dims=[32, 32],
         activation="elu",
     )
     algorithm = RslRlPpoAlgorithmCfg(
@@ -29,8 +29,8 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         entropy_coef=0.005,
         num_learning_epochs=5,
         num_mini_batches=4,
-        learning_rate=1.0e-3,
-        schedule="adaptive",
+        learning_rate=3.0e-4,
+        schedule="fixed",
         gamma=0.99,
         lam=0.95,
         desired_kl=0.01,
