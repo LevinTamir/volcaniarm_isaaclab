@@ -184,15 +184,17 @@ class RewardsCfg:
             "high": 1.3089969389957472,   # +75°
         },
     )
-    # Passive arm_joints: measured range [-90°, +50°] (asymmetric).
+    # Passive arm_joints: range widened to [-100°, +60°] (was [-90°, +50°]).
+    # The reach-up workspace requires passives near the edges; the original
+    # band was too tight and the penalty kept fighting reach.
     arm_pos_in_range = RewTerm(
         func=mdp.joint_pos_out_of_range,
         weight=-1.0,
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=["volcaniarm_(left|right)_arm_joint"]),
-            "low": -1.5707963267948966,   # -90°  (-π/2)
-            "high": 0.8726646259971648,   # +50°
+            "low": -1.7453292519943295,   # -100°
+            "high": 1.0471975511965976,   # +60°
         },
     )
 
