@@ -138,48 +138,40 @@ class EventCfg:
 
 @configclass
 class RewardsCfg:
-    # Baseline reward: EE position tracking + a soft penalty for elbow
-    # joint excursions beyond the measured ±65° mechanical range.
-    # URDF keeps wide limits so PhysX's closure-constraint solver stays
-    # stable — we teach the policy to respect the working range via the
-    # soft penalty instead.
+    # Minimal reward stack — matches the IsaacLab UR10 reach example
+    # (L2 + single tanh + smoothness) plus one extra penalty for the
+    # passive 5-bar arm joints to keep the linkage in feasible range.
+    # URDF keeps wide ±π limits so PhysX's closure-constraint solver
+    # stays stable.
+
+    # Reach: L2 distance + smooth tanh shaping (UR10 defaults).
     end_effector_position_tracking = RewTerm(
         func=mdp.position_command_error,
         weight=-0.2,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"]), "command_name": "ee_pose"},
     )
-    end_effector_position_tracking_tanh_broad = RewTerm(
+    end_effector_position_tracking_fine_grained = RewTerm(
         func=mdp.position_command_error_tanh,
-        weight=1.0,
+        weight=0.1,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"]),
-            "std": 0.3,
+            "std": 0.1,
             "command_name": "ee_pose",
         },
     )
-    end_effector_position_tracking_tanh_fine = RewTerm(
-        func=mdp.position_command_error_tanh,
-        weight=3.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"]),
-            "std": 0.05,
-            "command_name": "ee_pose",
-        },
+
+    # Smoothness penalties — keep motion non-jittery.
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
+    joint_vel = RewTerm(
+        func=mdp.joint_vel_l2,
+        weight=-0.0001,
+        params={"asset_cfg": SceneEntityCfg("robot")},
     )
-    # Actuated elbow joints: ±75° working range.
-    elbow_pos_in_range = RewTerm(
-        func=mdp.joint_pos_out_of_range,
-        weight=-1.0,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=["volcaniarm_(left|right)_elbow_joint"]),
-            "low": -1.3089969389957472,   # -75°
-            "high": 1.3089969389957472,   # +75°
-        },
-    )
-    # Passive arm_joints: range widened to [-100°, +60°] (was [-90°, +50°]).
-    # The reach-up workspace requires passives near the edges; the original
-    # band was too tight and the penalty kept fighting reach.
+
+    # Passive arm_joints range penalty: keep the closure linkage in
+    # the feasible operating band. Actuated joints don't get a soft
+    # penalty — their positions are policy-controlled directly and the
+    # closure physics constrains the working range naturally.
     arm_pos_in_range = RewTerm(
         func=mdp.joint_pos_out_of_range,
         weight=-1.0,
@@ -189,15 +181,6 @@ class RewardsCfg:
             "low": -1.7453292519943295,   # -100°
             "high": 1.0471975511965976,   # +60°
         },
-    )
-
-    # Smoothness penalties — tiny weights, kill the jittery motion seen
-    # in play.py without competing with reach.
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
-    joint_vel = RewTerm(
-        func=mdp.joint_vel_l2,
-        weight=-0.0001,
-        params={"asset_cfg": SceneEntityCfg("robot")},
     )
 
 
