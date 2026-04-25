@@ -217,12 +217,14 @@ class RewardsCfg:
     #     params={"term_keys": "stuck"},
     # )
 
-    # Disabled — match Apr 22 setup. Re-enable if motion is too shaky in
-    # play.py; tiny weights (-0.0001) keep actions smooth without
-    # competing with reach.
-    # action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
-    # joint_vel = RewTerm(func=mdp.joint_vel_l2, weight=-0.0001,
-    #     params={"asset_cfg": SceneEntityCfg("robot")})
+    # Smoothness penalties — tiny weights, kill the jittery motion seen
+    # in play.py without competing with reach.
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
+    joint_vel = RewTerm(
+        func=mdp.joint_vel_l2,
+        weight=-0.0001,
+        params={"asset_cfg": SceneEntityCfg("robot")},
+    )
 
     # --- Disabled — layer back in if needed ---
     # action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
