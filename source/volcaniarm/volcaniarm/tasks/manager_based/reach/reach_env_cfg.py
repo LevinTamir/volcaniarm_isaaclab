@@ -70,7 +70,7 @@ class CommandsCfg:
             # (cart base sits at world z=0.98, so base-frame z = world-0.98).
             pos_x=(0.071, 0.071),
             pos_y=(-0.50, 0.50),
-            pos_z=(-0.98, -0.78),   # world z: 0 → 0.20 m (near-ground targets)
+            pos_z=(-0.98, -0.58),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
@@ -185,17 +185,36 @@ class RewardsCfg:
         },
     )
 
-    # --- Disabled — layer back in after baseline works ---
-    # elbow_up = RewTerm(func=mdp.elbow_up_posture, weight=0.5,
-    #     params={"asset_cfg": SceneEntityCfg("robot",
-    #         body_names=["volcaniarm_(left|right)_arm_link"])})
-    # link_proximity = RewTerm(func=mdp.link_pair_proximity, weight=-1.0,
-    #     params={"asset_cfg": SceneEntityCfg("robot"),
-    #         "pairs": [("volcaniarm_left_elbow_link", "volcaniarm_right_elbow_link"),
-    #                   ("volcaniarm_left_elbow_link", "volcaniarm_right_arm_link"),
-    #                   ("volcaniarm_left_arm_link", "volcaniarm_right_elbow_link"),
-    #                   ("volcaniarm_left_arm_link", "volcaniarm_right_arm_link")],
-    #         "min_distance": 0.15})
+    # Encourage elbow-up assembly mode (knees above base). Breaks
+    # tracking-reward ambiguity between the two 5-bar assembly modes.
+    elbow_up = RewTerm(
+        func=mdp.elbow_up_posture,
+        weight=0.5,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", body_names=["volcaniarm_(left|right)_arm_link"]),
+        },
+    )
+    # Self-collision avoidance via cross-side link COM distance.
+    # Penalizes the arms getting closer than 15 cm at any of the 4
+    # cross-side pairs. Catches the "tangled" / crossed configurations
+    # the policy was exploring without it.
+    link_proximity = RewTerm(
+        func=mdp.link_pair_proximity,
+        weight=-1.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "pairs": [
+                ("volcaniarm_left_elbow_link", "volcaniarm_right_elbow_link"),
+                ("volcaniarm_left_elbow_link", "volcaniarm_right_arm_link"),
+                ("volcaniarm_left_arm_link", "volcaniarm_right_elbow_link"),
+                ("volcaniarm_left_arm_link", "volcaniarm_right_arm_link"),
+            ],
+            "min_distance": 0.15,
+        },
+    )
+
+    # --- Disabled — layer back in if needed ---
     # action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
     # joint_vel = RewTerm(func=mdp.joint_vel_l2, weight=-0.0001,
     #     params={"asset_cfg": SceneEntityCfg("robot")})
