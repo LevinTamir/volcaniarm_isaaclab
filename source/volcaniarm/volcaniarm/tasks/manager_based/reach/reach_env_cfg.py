@@ -162,18 +162,15 @@ class RewardsCfg:
             "command_name": "ee_pose",
         },
     )
-    # Ultra-fine shaping for the last centimeter — std=0.01 means the
-    # gradient is concentrated within ~3 cm of target, giving the policy
-    # a strong "nail the last cm" incentive on top of broad+fine.
-    end_effector_position_tracking_tanh_ultrafine = RewTerm(
-        func=mdp.position_command_error_tanh,
-        weight=2.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"]),
-            "std": 0.01,
-            "command_name": "ee_pose",
-        },
-    )
+    # Disabled — ultrafine (std=0.01) provided almost no signal because
+    # the policy rarely got within its 3 cm useful range, while still
+    # contributing gradient noise. Re-enable once `fine` term consistently
+    # ends around 1.5-2.0 (means policy is averaging ~1 cm from target).
+    # end_effector_position_tracking_tanh_ultrafine = RewTerm(
+    #     func=mdp.position_command_error_tanh, weight=2.0,
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"]),
+    #         "std": 0.01, "command_name": "ee_pose"})
     # Actuated elbow joints: ±75° working range.
     elbow_pos_in_range = RewTerm(
         func=mdp.joint_pos_out_of_range,
