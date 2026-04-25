@@ -73,8 +73,8 @@ class CommandsCfg:
             # forcing it into only the contorted reach-up configs.
             # Base sits at world z=0.98 → base-frame z = world-0.98.
             pos_x=(0.071, 0.071),
-            pos_y=(-0.45, 0.45),
-            pos_z=(-0.98, -0.68),
+            pos_y=(-0.50, 0.50),
+            pos_z=(-0.98, -0.78),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
@@ -138,48 +138,51 @@ class EventCfg:
 
 @configclass
 class RewardsCfg:
-    # Minimal reward stack — matches the IsaacLab UR10 reach example
-    # (L2 + single tanh + smoothness) plus one extra penalty for the
-    # passive 5-bar arm joints to keep the linkage in feasible range.
-    # URDF keeps wide ±π limits so PhysX's closure-constraint solver
-    # stays stable.
-
-    # Reach: L2 distance + smooth tanh shaping (UR10 defaults).
+    # Apr 22 reward stack — L2 + broad+fine tanh + actuated/passive
+    # joint range penalties. Proven to reach 0.10 m position error.
     end_effector_position_tracking = RewTerm(
         func=mdp.position_command_error,
         weight=-0.2,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"]), "command_name": "ee_pose"},
     )
-    end_effector_position_tracking_fine_grained = RewTerm(
+    end_effector_position_tracking_tanh_broad = RewTerm(
         func=mdp.position_command_error_tanh,
-        weight=0.1,
+        weight=1.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"]),
-            "std": 0.1,
+            "std": 0.3,
             "command_name": "ee_pose",
         },
     )
-
-    # Smoothness penalties — keep motion non-jittery.
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
-    joint_vel = RewTerm(
-        func=mdp.joint_vel_l2,
-        weight=-0.0001,
-        params={"asset_cfg": SceneEntityCfg("robot")},
+    end_effector_position_tracking_tanh_fine = RewTerm(
+        func=mdp.position_command_error_tanh,
+        weight=3.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"]),
+            "std": 0.05,
+            "command_name": "ee_pose",
+        },
     )
-
-    # Passive arm_joints range penalty: keep the closure linkage in
-    # the feasible operating band. Actuated joints don't get a soft
-    # penalty — their positions are policy-controlled directly and the
-    # closure physics constrains the working range naturally.
+    # Actuated elbow joints: ±75° working range.
+    elbow_pos_in_range = RewTerm(
+        func=mdp.joint_pos_out_of_range,
+        weight=-1.0,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot", joint_names=["volcaniarm_(left|right)_elbow_joint"]),
+            "low": -1.3089969389957472,   # -75°
+            "high": 1.3089969389957472,   # +75°
+        },
+    )
+    # Passive arm_joints: measured range [-90°, +50°] (asymmetric).
     arm_pos_in_range = RewTerm(
         func=mdp.joint_pos_out_of_range,
         weight=-1.0,
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=["volcaniarm_(left|right)_arm_joint"]),
-            "low": -1.7453292519943295,   # -100°
-            "high": 1.0471975511965976,   # +60°
+            "low": -1.5707963267948966,   # -90°  (-π/2)
+            "high": 0.8726646259971648,   # +50°
         },
     )
 
