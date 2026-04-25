@@ -186,6 +186,17 @@ class RewardsCfg:
         },
     )
 
+    # Smoothness penalties — tiny weights to suppress shaky motion at
+    # the goal without competing with reach. Bump to -0.001 if the
+    # arm is still jittery after this; -0.01 if even more aggressive
+    # smoothing is needed (will start to slow reach).
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
+    joint_vel = RewTerm(
+        func=mdp.joint_vel_l2,
+        weight=-0.0001,
+        params={"asset_cfg": SceneEntityCfg("robot")},
+    )
+
 
 @configclass
 class TerminationsCfg:
