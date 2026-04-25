@@ -71,3 +71,15 @@ IsaacLab training loads `volcaniarm_closed.usd`. The ROS2 demo opens
 `volcaniarm_ros2.usd` (or `volcaniarm_lab.usd` for the dressed scene) in the
 Isaac Sim GUI and presses Play.
 
+## Deploying the trained policy
+
+Training exports `policy.onnx` under `logs/rsl_rl/volcaniarm_reach/<run>/exported/`.
+Copy it into `volcaniarm_ws` where the policy controller loads it from:
+
+```bash
+cp logs/rsl_rl/volcaniarm_reach/<run>/exported/policy.onnx \
+   ../volcaniarm_ws/src/volcaniarm_controller/models/policy.onnx
+```
+
+Rebuild the workspace and launch with the arg `controller:=policy`.
+
