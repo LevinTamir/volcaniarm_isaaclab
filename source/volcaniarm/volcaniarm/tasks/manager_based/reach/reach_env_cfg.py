@@ -185,34 +185,19 @@ class RewardsCfg:
         },
     )
 
-    # Encourage elbow-up assembly mode (knees above base). Breaks
-    # tracking-reward ambiguity between the two 5-bar assembly modes.
-    elbow_up = RewTerm(
-        func=mdp.elbow_up_posture,
-        weight=0.5,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot", body_names=["volcaniarm_(left|right)_arm_link"]),
-        },
-    )
-    # Self-collision avoidance via cross-side link COM distance.
-    # Penalizes the arms getting closer than 15 cm at any of the 4
-    # cross-side pairs. Catches the "tangled" / crossed configurations
-    # the policy was exploring without it.
-    link_proximity = RewTerm(
-        func=mdp.link_pair_proximity,
-        weight=-1.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot"),
-            "pairs": [
-                ("volcaniarm_left_elbow_link", "volcaniarm_right_elbow_link"),
-                ("volcaniarm_left_elbow_link", "volcaniarm_right_arm_link"),
-                ("volcaniarm_left_arm_link", "volcaniarm_right_elbow_link"),
-                ("volcaniarm_left_arm_link", "volcaniarm_right_arm_link"),
-            ],
-            "min_distance": 0.15,
-        },
-    )
+    # --- Disabled — relying on `stuck` termination + penalty instead ---
+    # If the stuck-penalty alone doesn't cover the tangled / wrong-mode
+    # configurations, re-enable these two:
+    # elbow_up = RewTerm(func=mdp.elbow_up_posture, weight=0.5,
+    #     params={"asset_cfg": SceneEntityCfg("robot",
+    #         body_names=["volcaniarm_(left|right)_arm_link"])})
+    # link_proximity = RewTerm(func=mdp.link_pair_proximity, weight=-1.0,
+    #     params={"asset_cfg": SceneEntityCfg("robot"),
+    #         "pairs": [("volcaniarm_left_elbow_link", "volcaniarm_right_elbow_link"),
+    #                   ("volcaniarm_left_elbow_link", "volcaniarm_right_arm_link"),
+    #                   ("volcaniarm_left_arm_link", "volcaniarm_right_elbow_link"),
+    #                   ("volcaniarm_left_arm_link", "volcaniarm_right_arm_link")],
+    #         "min_distance": 0.15})
 
     # One-shot penalty when the `stuck` termination fires (TerminationsCfg).
     # Fires once on the terminating step. Strong enough to make the policy
