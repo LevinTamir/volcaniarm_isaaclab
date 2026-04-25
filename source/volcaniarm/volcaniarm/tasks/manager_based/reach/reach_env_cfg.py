@@ -216,7 +216,7 @@ class RewardsCfg:
     # avoid configs that lead to early termination.
     stuck_penalty = RewTerm(
         func=mdp.is_terminated_term,
-        weight=-3.0,
+        weight=-10.0,
         params={"term_keys": "stuck"},
     )
 
