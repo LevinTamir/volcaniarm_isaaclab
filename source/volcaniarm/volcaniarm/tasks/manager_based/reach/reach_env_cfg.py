@@ -214,6 +214,15 @@ class RewardsCfg:
         },
     )
 
+    # One-shot penalty when the `stuck` termination fires (TerminationsCfg).
+    # Fires once on the terminating step. Strong enough to make the policy
+    # avoid configs that lead to early termination.
+    stuck_penalty = RewTerm(
+        func=mdp.is_terminated_term,
+        weight=-10.0,
+        params={"term_keys": "stuck"},
+    )
+
     # --- Disabled — layer back in if needed ---
     # action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
     # joint_vel = RewTerm(func=mdp.joint_vel_l2, weight=-0.0001,
@@ -223,6 +232,27 @@ class RewardsCfg:
 @configclass
 class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
+
+    # Early termination if the policy gets the arm into a configuration it
+    # can't escape (low velocity + far from target). `time_out=False` so
+    # PPO treats it as failure (no value bootstrap → implicit penalty).
+    # An additional explicit penalty is applied via the `stuck_penalty`
+    # RewTerm in RewardsCfg.
+    stuck = DoneTerm(
+        func=mdp.stuck_arm,
+        time_out=False,
+        params={
+            "asset_cfg": SceneEntityCfg(
+                "robot",
+                joint_names=["volcaniarm_(left|right)_elbow_joint"],
+                body_names=["left_ee_link"],
+            ),
+            "command_name": "ee_pose",
+            "dist_threshold": 0.10,         # EE > 10 cm from target
+            "vel_threshold": 0.05,          # max |q̇| < 0.05 rad/s
+            "min_episode_steps": 30,        # 1 s grace at 30 Hz policy rate
+        },
+    )
 
 
 ##
