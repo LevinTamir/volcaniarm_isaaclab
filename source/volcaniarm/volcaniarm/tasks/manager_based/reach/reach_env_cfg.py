@@ -183,13 +183,9 @@ class RewardsCfg:
         },
     )
     # Passive arm_joints: measured range [-90°, +50°] (asymmetric).
-    # Weight -0.3 (down from -1.0) — passive joints are determined by
-    # closure physics + actuated commands, not directly by the policy.
-    # Heavier penalty was dragging the policy away from reach configs
-    # that required passives near the range edges.
     arm_pos_in_range = RewTerm(
         func=mdp.joint_pos_out_of_range,
-        weight=-0.3,
+        weight=-1.0,
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=["volcaniarm_(left|right)_arm_joint"]),
@@ -221,15 +217,12 @@ class RewardsCfg:
     #     params={"term_keys": "stuck"},
     # )
 
-    # Smoothness penalties — tiny weights but they keep the policy from
-    # outputting jittery actions. Without these the deployed motion looks
-    # noticeably shaky even though the policy reaches targets correctly.
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
-    joint_vel = RewTerm(
-        func=mdp.joint_vel_l2,
-        weight=-0.0001,
-        params={"asset_cfg": SceneEntityCfg("robot")},
-    )
+    # Disabled — match Apr 22 setup. Re-enable if motion is too shaky in
+    # play.py; tiny weights (-0.0001) keep actions smooth without
+    # competing with reach.
+    # action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
+    # joint_vel = RewTerm(func=mdp.joint_vel_l2, weight=-0.0001,
+    #     params={"asset_cfg": SceneEntityCfg("robot")})
 
     # --- Disabled — layer back in if needed ---
     # action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
