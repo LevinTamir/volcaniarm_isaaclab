@@ -67,13 +67,15 @@ class CommandsCfg:
             # Targets are in `base_link` frame. The arm is planar —
             # left_ee_link X is fixed at +0.071 (kinematically), so we
             # pin target X there. Y spans the cart's inner leg rails
-            # (legs at y=±0.698). Z covers the weed-reach band: weeds
-            # grow 20-30 cm tall from the ground, so the EE needs to
-            # reach roughly 15-30 cm above ground (world z 0.15→0.30 m).
+            # (legs at y=±0.698). Z covers world 0→0.30 m: includes the
+            # easy "reach to ground" region (where Apr 22 trained well)
+            # AND the harder "reach 15-30 cm above ground" weed band.
+            # Wider distribution helps the policy generalize and avoids
+            # forcing it into only the contorted reach-up configs.
             # Base sits at world z=0.98 → base-frame z = world-0.98.
             pos_x=(0.071, 0.071),
             pos_y=(-0.45, 0.45),
-            pos_z=(-0.83, -0.68),
+            pos_z=(-0.98, -0.68),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
@@ -207,23 +209,23 @@ class TerminationsCfg:
 
 @configclass
 class CurriculumCfg:
-    # Linearly expand the EE target box over the first ~60% of training:
-    #   iter 0-100: tiny center box (y±10cm, z=-0.78 only) — easy reach
-    #   iter 100-300: linear expansion in both axes
-    #   iter 300+: full weed-reach workspace (y±45cm, z [-0.83, -0.68])
-    expand_targets = CurrTerm(
-        func=mdp.expand_ee_target_box,
-        params={
-            "command_name": "ee_pose",
-            "start_iter": 100,
-            "end_iter": 300,
-            "y_start": 0.10,
-            "y_end": 0.45,
-            "z_start": (-0.78, -0.78),
-            "z_end": (-0.83, -0.68),
-            "num_steps_per_env": 32,
-        },
-    )
+    # Curriculum currently disabled — tested with z target (-0.83, -0.68)
+    # and the policy overfit to the easy phase, then regressed as the
+    # box expanded. Full distribution training works better.
+    pass
+    # expand_targets = CurrTerm(
+    #     func=mdp.expand_ee_target_box,
+    #     params={
+    #         "command_name": "ee_pose",
+    #         "start_iter": 100,
+    #         "end_iter": 300,
+    #         "y_start": 0.10,
+    #         "y_end": 0.45,
+    #         "z_start": (-0.78, -0.78),
+    #         "z_end": (-0.83, -0.68),
+    #         "num_steps_per_env": 32,
+    #     },
+    # )
 
 
 ##
