@@ -72,7 +72,7 @@ class CommandsCfg:
             # reach roughly 15-30 cm above ground (world z 0.15→0.30 m).
             # Base sits at world z=0.98 → base-frame z = world-0.98.
             pos_x=(0.071, 0.071),
-            pos_y=(-0.50, 0.50),
+            pos_y=(-0.45, 0.45),
             pos_z=(-0.83, -0.68),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
@@ -165,15 +165,6 @@ class RewardsCfg:
             "command_name": "ee_pose",
         },
     )
-    # Disabled — ultrafine (std=0.01) provided almost no signal because
-    # the policy rarely got within its 3 cm useful range, while still
-    # contributing gradient noise. Re-enable once `fine` term consistently
-    # ends around 1.5-2.0 (means policy is averaging ~1 cm from target).
-    # end_effector_position_tracking_tanh_ultrafine = RewTerm(
-    #     func=mdp.position_command_error_tanh, weight=2.0,
-    #     params={
-    #         "asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"]),
-    #         "std": 0.01, "command_name": "ee_pose"})
     # Actuated elbow joints: ±75° working range.
     elbow_pos_in_range = RewTerm(
         func=mdp.joint_pos_out_of_range,
@@ -199,29 +190,6 @@ class RewardsCfg:
         },
     )
 
-    # --- Disabled — relying on `stuck` termination + penalty instead ---
-    # If the stuck-penalty alone doesn't cover the tangled / wrong-mode
-    # configurations, re-enable these two:
-    # elbow_up = RewTerm(func=mdp.elbow_up_posture, weight=0.5,
-    #     params={"asset_cfg": SceneEntityCfg("robot",
-    #         body_names=["volcaniarm_(left|right)_arm_link"])})
-    # link_proximity = RewTerm(func=mdp.link_pair_proximity, weight=-1.0,
-    #     params={"asset_cfg": SceneEntityCfg("robot"),
-    #         "pairs": [("volcaniarm_left_elbow_link", "volcaniarm_right_elbow_link"),
-    #                   ("volcaniarm_left_elbow_link", "volcaniarm_right_arm_link"),
-    #                   ("volcaniarm_left_arm_link", "volcaniarm_right_elbow_link"),
-    #                   ("volcaniarm_left_arm_link", "volcaniarm_right_arm_link")],
-    #         "min_distance": 0.15})
-
-    # Disabled together with the `stuck` termination — the combination
-    # was killing 71% of episodes early, creating a death spiral where
-    # the policy got too risk-averse to actually reach.
-    # stuck_penalty = RewTerm(
-    #     func=mdp.is_terminated_term,
-    #     weight=-10.0,
-    #     params={"term_keys": "stuck"},
-    # )
-
     # Smoothness penalties — tiny weights, kill the jittery motion seen
     # in play.py without competing with reach.
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
@@ -231,35 +199,10 @@ class RewardsCfg:
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
 
-    # --- Disabled — layer back in if needed ---
-    # action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
-    # joint_vel = RewTerm(func=mdp.joint_vel_l2, weight=-0.0001,
-    #     params={"asset_cfg": SceneEntityCfg("robot")})
-
 
 @configclass
 class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
-
-    # Disabled — was firing on 71% of episodes (cutoff dist=0.10 m too
-    # tight for a still-learning policy), causing a death spiral. If
-    # re-enabled, loosen significantly: dist_threshold≥0.30, vel_threshold
-    # ≤0.01, min_episode_steps≥200.
-    # stuck = DoneTerm(
-    #     func=mdp.stuck_arm,
-    #     time_out=False,
-    #     params={
-    #         "asset_cfg": SceneEntityCfg(
-    #             "robot",
-    #             joint_names=["volcaniarm_(left|right)_elbow_joint"],
-    #             body_names=["left_ee_link"],
-    #         ),
-    #         "command_name": "ee_pose",
-    #         "dist_threshold": 0.10,
-    #         "vel_threshold": 0.05,
-    #         "min_episode_steps": 30,
-    #     },
-    # )
 
 
 @configclass
@@ -267,7 +210,7 @@ class CurriculumCfg:
     # Linearly expand the EE target box over the first ~60% of training:
     #   iter 0-100: tiny center box (y±10cm, z=-0.78 only) — easy reach
     #   iter 100-300: linear expansion in both axes
-    #   iter 300+: full weed-reach workspace (y±50cm, z [-0.83, -0.68])
+    #   iter 300+: full weed-reach workspace (y±45cm, z [-0.83, -0.68])
     expand_targets = CurrTerm(
         func=mdp.expand_ee_target_box,
         params={
@@ -275,7 +218,7 @@ class CurriculumCfg:
             "start_iter": 100,
             "end_iter": 300,
             "y_start": 0.10,
-            "y_end": 0.50,
+            "y_end": 0.45,
             "z_start": (-0.78, -0.78),
             "z_end": (-0.83, -0.68),
             "num_steps_per_env": 32,
