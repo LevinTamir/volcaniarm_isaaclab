@@ -18,8 +18,8 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         init_noise_std=0.3,
         actor_obs_normalization=True,
         critic_obs_normalization=True,
-        actor_hidden_dims=[32, 32],
-        critic_hidden_dims=[32, 32],
+        actor_hidden_dims=[64, 64],
+        critic_hidden_dims=[64, 64],
         activation="elu",
     )
     algorithm = RslRlPpoAlgorithmCfg(

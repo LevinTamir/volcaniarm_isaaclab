@@ -70,7 +70,7 @@ class CommandsCfg:
             # (cart base sits at world z=0.98, so base-frame z = world-0.98).
             pos_x=(0.071, 0.071),
             pos_y=(-0.50, 0.50),
-            pos_z=(-0.98, -0.58),
+            pos_z=(-0.98, -0.38),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
@@ -216,7 +216,7 @@ class RewardsCfg:
     # avoid configs that lead to early termination.
     stuck_penalty = RewTerm(
         func=mdp.is_terminated_term,
-        weight=-10.0,
+        weight=-3.0,
         params={"term_keys": "stuck"},
     )
 
