@@ -70,7 +70,7 @@ class CommandsCfg:
             # (cart base sits at world z=0.98, so base-frame z = world-0.98).
             pos_x=(0.071, 0.071),
             pos_y=(-0.50, 0.50),
-            pos_z=(-0.98, -0.38),
+            pos_z=(-0.90, -0.38),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
@@ -211,14 +211,14 @@ class RewardsCfg:
     #                   ("volcaniarm_left_arm_link", "volcaniarm_right_arm_link")],
     #         "min_distance": 0.15})
 
-    # One-shot penalty when the `stuck` termination fires (TerminationsCfg).
-    # Fires once on the terminating step. Strong enough to make the policy
-    # avoid configs that lead to early termination.
-    stuck_penalty = RewTerm(
-        func=mdp.is_terminated_term,
-        weight=-10.0,
-        params={"term_keys": "stuck"},
-    )
+    # Disabled together with the `stuck` termination — the combination
+    # was killing 71% of episodes early, creating a death spiral where
+    # the policy got too risk-averse to actually reach.
+    # stuck_penalty = RewTerm(
+    #     func=mdp.is_terminated_term,
+    #     weight=-10.0,
+    #     params={"term_keys": "stuck"},
+    # )
 
     # Smoothness penalties — tiny weights but they keep the policy from
     # outputting jittery actions. Without these the deployed motion looks
@@ -240,26 +240,25 @@ class RewardsCfg:
 class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
 
-    # Early termination if the policy gets the arm into a configuration it
-    # can't escape (low velocity + far from target). `time_out=False` so
-    # PPO treats it as failure (no value bootstrap → implicit penalty).
-    # An additional explicit penalty is applied via the `stuck_penalty`
-    # RewTerm in RewardsCfg.
-    stuck = DoneTerm(
-        func=mdp.stuck_arm,
-        time_out=False,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot",
-                joint_names=["volcaniarm_(left|right)_elbow_joint"],
-                body_names=["left_ee_link"],
-            ),
-            "command_name": "ee_pose",
-            "dist_threshold": 0.10,         # EE > 10 cm from target
-            "vel_threshold": 0.05,          # max |q̇| < 0.05 rad/s
-            "min_episode_steps": 30,        # 1 s grace at 30 Hz policy rate
-        },
-    )
+    # Disabled — was firing on 71% of episodes (cutoff dist=0.10 m too
+    # tight for a still-learning policy), causing a death spiral. If
+    # re-enabled, loosen significantly: dist_threshold≥0.30, vel_threshold
+    # ≤0.01, min_episode_steps≥200.
+    # stuck = DoneTerm(
+    #     func=mdp.stuck_arm,
+    #     time_out=False,
+    #     params={
+    #         "asset_cfg": SceneEntityCfg(
+    #             "robot",
+    #             joint_names=["volcaniarm_(left|right)_elbow_joint"],
+    #             body_names=["left_ee_link"],
+    #         ),
+    #         "command_name": "ee_pose",
+    #         "dist_threshold": 0.10,
+    #         "vel_threshold": 0.05,
+    #         "min_episode_steps": 30,
+    #     },
+    # )
 
 
 ##
