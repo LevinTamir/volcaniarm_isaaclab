@@ -83,3 +83,7 @@ cp logs/rsl_rl/volcaniarm_reach/<run>/exported/policy.onnx \
 
 Rebuild the workspace and launch with the arg `controller:=policy`.
 
+
+
+[![Volcaniarm policy demo](https://img.youtube.com/vi/4XY7dVNpVtU/0.jpg)](https://www.youtube.com/watch?v=4XY7dVNpVtU)
+
