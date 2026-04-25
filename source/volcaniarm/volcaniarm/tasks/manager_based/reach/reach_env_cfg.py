@@ -186,9 +186,13 @@ class RewardsCfg:
         },
     )
     # Passive arm_joints: measured range [-90°, +50°] (asymmetric).
+    # Weight -0.3 (down from -1.0) — passive joints are determined by
+    # closure physics + actuated commands, not directly by the policy.
+    # Heavier penalty was dragging the policy away from reach configs
+    # that required passives near the range edges.
     arm_pos_in_range = RewTerm(
         func=mdp.joint_pos_out_of_range,
-        weight=-1.0,
+        weight=-0.3,
         params={
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=["volcaniarm_(left|right)_arm_joint"]),
