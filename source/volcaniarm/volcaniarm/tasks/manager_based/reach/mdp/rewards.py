@@ -60,35 +60,40 @@ def joint_pos_out_of_range(
     return (above + below).sum(dim=1)
 
 
-def elbow_up_posture(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Tensor:
-    # Mean knee Z (passive arm_joint origins) above the robot base.
-    # Both 5-bar assembly modes can reach the same EE pose, so the
-    # tracking reward is ambiguous between them — this term breaks the
-    # tie toward elbow-up.
-    asset: RigidObject = env.scene[asset_cfg.name]
-    knee_z = asset.data.body_pos_w[:, asset_cfg.body_ids, 2]
-    base_z = asset.data.root_pos_w[:, 2:3]
-    return (knee_z - base_z).mean(dim=1)
+# --- Currently unused — kept commented for easy re-enable. ---
+# Re-enable in reach_env_cfg.py's RewardsCfg if the policy still produces
+# tangled / wrong-assembly-mode configurations after the stuck-termination
+# is doing its job.
+
+# def elbow_up_posture(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+#     # Mean knee Z (passive arm_joint origins) above the robot base.
+#     # Both 5-bar assembly modes can reach the same EE pose, so the
+#     # tracking reward is ambiguous between them — this term breaks the
+#     # tie toward elbow-up.
+#     asset: RigidObject = env.scene[asset_cfg.name]
+#     knee_z = asset.data.body_pos_w[:, asset_cfg.body_ids, 2]
+#     base_z = asset.data.root_pos_w[:, 2:3]
+#     return (knee_z - base_z).mean(dim=1)
 
 
-def link_pair_proximity(
-    env: ManagerBasedRLEnv,
-    asset_cfg: SceneEntityCfg,
-    pairs: list,
-    min_distance: float,
-) -> torch.Tensor:
-    # Self-collision proxy: sum over the given body pairs of
-    # max(0, min_distance - ||com_a - com_b||). Zero when all pairs are
-    # farther apart than `min_distance`; grows linearly as any pair
-    # approaches. Uses body centers of mass in world frame. Body lookup
-    # is by name (not asset_cfg.body_ids) to avoid the silent
-    # preserve_order=False reordering trap.
-    asset: RigidObject = env.scene[asset_cfg.name]
-    com_pos = asset.data.body_com_pos_w
-    penalties = []
-    for name_a, name_b in pairs:
-        a_idx = asset.find_bodies(name_a)[0][0]
-        b_idx = asset.find_bodies(name_b)[0][0]
-        d = torch.norm(com_pos[:, a_idx] - com_pos[:, b_idx], dim=-1)
-        penalties.append((min_distance - d).clamp(min=0.0))
-    return torch.stack(penalties, dim=-1).sum(dim=-1)
+# def link_pair_proximity(
+#     env: ManagerBasedRLEnv,
+#     asset_cfg: SceneEntityCfg,
+#     pairs: list,
+#     min_distance: float,
+# ) -> torch.Tensor:
+#     # Self-collision proxy: sum over the given body pairs of
+#     # max(0, min_distance - ||com_a - com_b||). Zero when all pairs are
+#     # farther apart than `min_distance`; grows linearly as any pair
+#     # approaches. Uses body centers of mass in world frame. Body lookup
+#     # is by name (not asset_cfg.body_ids) to avoid the silent
+#     # preserve_order=False reordering trap.
+#     asset: RigidObject = env.scene[asset_cfg.name]
+#     com_pos = asset.data.body_com_pos_w
+#     penalties = []
+#     for name_a, name_b in pairs:
+#         a_idx = asset.find_bodies(name_a)[0][0]
+#         b_idx = asset.find_bodies(name_b)[0][0]
+#         d = torch.norm(com_pos[:, a_idx] - com_pos[:, b_idx], dim=-1)
+#         penalties.append((min_distance - d).clamp(min=0.0))
+#     return torch.stack(penalties, dim=-1).sum(dim=-1)
