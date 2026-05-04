@@ -35,12 +35,14 @@ CYLINDER_PATH = f"{ROOT_PATH}/GreenCylinder"
 
 # World-frame placement. Mirrors `vision_test.sdf` so a policy that
 # reaches the cylinder in Gazebo also reaches it here.
-#   X  -0.15 — under the arm's planar reach plane
-#                (base_link at world ~(-0.218, 0, 1.0) + planar offset 0.071)
+#   X  -0.05 — moved forward (+X) from the original -0.15 so the
+#                cylinder lands under the arm's reachable region in
+#                IsaacSim's referenced robot pose. Tune empirically
+#                with scripts/render_check.py if it needs more bias.
 #   Y   0.25 — inside the ±0.5 workspace, offset for visibility
 #   Z   0.05 — cylinder centre 5 cm above the ground; with height 0.10
 #              the bottom sits flush at z=0
-CYL_TRANSLATE = Gf.Vec3d(-0.15, 0.25, 0.05)
+CYL_TRANSLATE = Gf.Vec3d(-0.05, 0.25, 0.05)
 CYL_RADIUS = 0.025
 CYL_HEIGHT = 0.10
 CYL_COLOR = Gf.Vec3f(0.15, 0.55, 0.15)
