@@ -142,8 +142,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         env_cfg.seed = seed
         agent_cfg.seed = seed
 
-    # specify directory for logging experiments
-    log_root_path = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name)
+    # specify directory for logging experiments — one subfolder per
+    # task ("reach", "reach_vision", ...) so artefacts don't pile up
+    # together; existing per-experiment / timestamp layout preserved
+    # underneath.
+    task_subdir = cli_args.task_log_subdir(args_cli.task)
+    log_root_path = os.path.join("logs", task_subdir, "rsl_rl", agent_cfg.experiment_name)
     log_root_path = os.path.abspath(log_root_path)
     print(f"[INFO] Logging experiment in directory: {log_root_path}")
     # specify directory for logging runs: {time-stamp}_{run_name}
