@@ -133,18 +133,21 @@ class VolcaniarmReachVisionSceneCfg(InteractiveSceneCfg):
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -0.01)),
     )
     robot = VOLCANIARM_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
-    # Dome light alone leaves the floor dim and tinted by the default
-    # sky. A downward-pointing distant light + dimmer dome give an
-    # evenly-lit, true-coloured render closer to lab fluorescents.
+    # Dome alone leaves the floor dim and tinted by the default sky.
+    # A weaker dome + a dimmer top-down distant light gives even,
+    # true-coloured rendering — bright enough that diffuse_color
+    # shows through, dim enough that the floor isn't washed out
+    # toward white. Calibrated so a (0.72, 0.70, 0.68) floor reads
+    # ~(180, 175, 170) in the rendered PNG.
     dome = AssetBaseCfg(
         prim_path="/World/dome",
-        spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=1000.0),
+        spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=400.0),
     )
     sun = AssetBaseCfg(
         prim_path="/World/sun",
         spawn=sim_utils.DistantLightCfg(
             color=(1.0, 1.0, 0.95),
-            intensity=2500.0,
+            intensity=1200.0,
             angle=10.0,
         ),
         init_state=AssetBaseCfg.InitialStateCfg(rot=(0.7071, 0.7071, 0.0, 0.0)),
