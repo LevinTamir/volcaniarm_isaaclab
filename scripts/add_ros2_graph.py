@@ -218,8 +218,11 @@ def main() -> None:
                     # Order MUST match the URDF <ros2_control> joint declaration
                     # order, because SubscribeJointState forwards positions by
                     # array index (not by name) into ArticulationController.
-                    # The xacro declares right_elbow first, then left_elbow.
-                    ["volcaniarm_right_elbow_joint", "volcaniarm_left_elbow_joint"],
+                    # Aligned 2026-05-05 with volcaniarm_ws and the IsaacLab
+                    # training URDF: left_elbow first, then right_elbow. A
+                    # mismatch here silently swaps the actuated joints and the
+                    # deployed policy drives the arm to the mirror configuration.
+                    ["volcaniarm_left_elbow_joint", "volcaniarm_right_elbow_joint"],
                 ),
                 ("CreateRenderProduct.inputs:cameraPrim", [usdrt.Sdf.Path(CAMERA_SENSOR_PATH)]),
                 ("CreateRenderProduct.inputs:width", CAM_WIDTH),
