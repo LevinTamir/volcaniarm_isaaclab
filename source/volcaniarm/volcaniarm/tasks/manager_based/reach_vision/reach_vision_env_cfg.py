@@ -19,6 +19,8 @@ Differs from `reach`:
   floor is small.
 """
 
+import math
+
 import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
@@ -30,6 +32,7 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import TiledCameraCfg
+from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
@@ -52,6 +55,57 @@ IMG_W, IMG_H = 96, 96
 FLOOR_COLOR = (0.72, 0.70, 0.68)  # matches scripts/build_lab.py
 
 
+# ---------------------------------------------------------------------
+# Camera placement — edit this block to retune the rig
+# ---------------------------------------------------------------------
+# Conceptually the same as the URDF's `camera_mount_linear_joint` (xyz)
+# and `camera_mount_rev_joint` (rpy): expose translation + Euler angles
+# directly so they can be tweaked without touching quaternion math.
+#
+# CAMERA_PARENT_PRIM is the prim the offset is applied relative to. Two
+# good choices:
+#   "{ENV_REGEX_NS}/Robot/camera_link"
+#       Mirrors `volcaniarm_ros2.usd` — the camera lives on the same
+#       table-mount chain as the real RealSense (camera_mount_linear →
+#       camera_mount_rev → camera_link). Default below; xyz/rpy are
+#       expressed in the URDF's `camera_link` body frame (X forward,
+#       Y left, Z up).
+#   "{ENV_REGEX_NS}/Robot/volcaniarm_base_link"
+#       For a "camera fixed on the robot base looking down" rig — bypass
+#       the table mount entirely. Reset xyz/rpy below to taste.
+#
+# CAMERA_OFFSET_RPY is roll/pitch/yaw in **radians**, applied as an
+# extrinsic XYZ Euler rotation (URDF convention). Positive roll is
+# right-handed about X, etc.
+#
+# The default rpy here is (-π/2, 0, -π/2) — the standard
+# `camera_link` → `camera_link_optical` transform. Combined with
+# convention="ros" in the TiledCamera spec, the rendered RGB lines up
+# with `camera_color_optical_frame` from the ROS2 bridge, so a policy
+# trained here matches what `/camera/color/image_raw` looks like at
+# deploy time.
+CAMERA_PARENT_PRIM = "{ENV_REGEX_NS}/Robot/camera_link"
+CAMERA_OFFSET_XYZ = (0.0, 0.0, 0.0)
+CAMERA_OFFSET_RPY = (-math.pi / 2.0, 0.0, -math.pi / 2.0)
+
+
+def _quat_from_rpy(rpy: tuple[float, float, float]) -> tuple[float, float, float, float]:
+    """Extrinsic XYZ Euler (rad) → (w, x, y, z) quaternion."""
+    r, p, y = rpy
+    cr, sr = math.cos(r * 0.5), math.sin(r * 0.5)
+    cp, sp = math.cos(p * 0.5), math.sin(p * 0.5)
+    cy, sy = math.cos(y * 0.5), math.sin(y * 0.5)
+    return (
+        cr * cp * cy + sr * sp * sy,
+        sr * cp * cy - cr * sp * sy,
+        cr * sp * cy + sr * cp * sy,
+        cr * cp * sy - sr * sp * cy,
+    )
+
+
+CAMERA_OFFSET_QUAT = _quat_from_rpy(CAMERA_OFFSET_RPY)
+
+
 ##
 # Scene definition
 ##
@@ -61,14 +115,39 @@ FLOOR_COLOR = (0.72, 0.70, 0.68)  # matches scripts/build_lab.py
 class VolcaniarmReachVisionSceneCfg(InteractiveSceneCfg):
     """Scene: concrete-grey ground, dome light, robot, plant, camera."""
 
+    # Concrete-grey floor. `GroundPlaneCfg` and `TerrainImporterCfg`
+    # both spawn the default Isaac grid USD (whose base texture is
+    # blue), which would dominate the rendered image even after a
+    # diffuse_color override. Spawn an explicit colored cuboid 1 cm
+    # thick at z<0 instead — same pattern `scripts/build_lab.py` uses
+    # for the lab world. The cuboid is treated as a static collider
+    # via `collision_props`; no rigid body so it doesn't fall.
     ground = AssetBaseCfg(
         prim_path="/World/ground",
-        spawn=sim_utils.GroundPlaneCfg(color=FLOOR_COLOR),
+        spawn=sim_utils.MeshCuboidCfg(
+            size=(40.0, 40.0, 0.02),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=FLOOR_COLOR),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            physics_material=sim_utils.RigidBodyMaterialCfg(),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -0.01)),
     )
     robot = VOLCANIARM_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
-    light = AssetBaseCfg(
-        prim_path="/World/light",
-        spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=2500.0),
+    # Dome light alone leaves the floor dim and tinted by the default
+    # sky. A downward-pointing distant light + dimmer dome give an
+    # evenly-lit, true-coloured render closer to lab fluorescents.
+    dome = AssetBaseCfg(
+        prim_path="/World/dome",
+        spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=1000.0),
+    )
+    sun = AssetBaseCfg(
+        prim_path="/World/sun",
+        spawn=sim_utils.DistantLightCfg(
+            color=(1.0, 1.0, 0.95),
+            intensity=2500.0,
+            angle=10.0,
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(rot=(0.7071, 0.7071, 0.0, 0.0)),
     )
 
     # Plant surrogate: green cylinder. Disabled gravity so it stays
@@ -89,33 +168,24 @@ class VolcaniarmReachVisionSceneCfg(InteractiveSceneCfg):
         init_state=RigidObjectCfg.InitialStateCfg(pos=(PLANT_X_BASE, 0.0, 0.10)),
     )
 
-    # Downward-looking camera mounted on the robot's base link.
-    # Offset is in base_link frame; the same (xyz, rpy) will be reused
-    # in the URDF when Phase B (ROS2 deployment) starts — robot link
-    # tree is shared CAD between USD and URDF.
-    #
-    # Position: 0.30 m above the base, centred on the workspace X. The
-    # base sits at world z=0.98 → camera at world z≈1.28 looks straight
-    # down onto the workspace (world z 0–0.20). With FOV ~70°, horizontal
-    # coverage at the floor is ~1.5 m — well over the Y range ±0.5.
-    #
-    # Rotation: 180° around X (quat w,x,y,z = 0,1,0,0) flips the
-    # camera's "ros" forward axis (+Z) to point in -base_z = -world_z
-    # = downward. The image's vertical axis is then aligned with the
-    # robot's Y axis.
+    # Camera placement is driven by the CAMERA_* constants at the top
+    # of this file — edit those, not this block. Intrinsics mirror
+    # `scripts/add_ros2_graph.py` so the train-time rig matches the
+    # ROS2 USD verbatim.
     base_camera = TiledCameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/volcaniarm_base_link/base_camera",
+        prim_path=f"{CAMERA_PARENT_PRIM}/base_camera",
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(PLANT_X_BASE, 0.0, 0.30),
-            rot=(0.0, 1.0, 0.0, 0.0),
+            pos=CAMERA_OFFSET_XYZ,
+            rot=CAMERA_OFFSET_QUAT,
             convention="ros",
         ),
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
-            focal_length=12.0,
+            focal_length=18.14721,
             focus_distance=400.0,
             horizontal_aperture=20.955,
-            clipping_range=(0.05, 5.0),
+            vertical_aperture=15.2908,
+            clipping_range=(0.05, 50.0),
         ),
         width=IMG_W,
         height=IMG_H,
