@@ -44,8 +44,15 @@ args_cli, hydra_args = parser.parse_known_args()
 if args_cli.video:
     args_cli.enable_cameras = True
 
+# Mirror the per-task split for Hydra's working dir: route
+# `outputs/<date>/<time>/` to `outputs/<task>/<date>/<time>/`. The
+# OmegaConf interpolation `${now:...}` is preserved verbatim — only the
+# task slug is materialised here.
+_task_subdir = cli_args.task_log_subdir(args_cli.task)
+_hydra_run_dir_override = f"hydra.run.dir=outputs/{_task_subdir}/${{now:%Y-%m-%d}}/${{now:%H-%M-%S}}"
+
 # clear out sys.argv for Hydra
-sys.argv = [sys.argv[0]] + hydra_args
+sys.argv = [sys.argv[0], _hydra_run_dir_override] + hydra_args
 
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
