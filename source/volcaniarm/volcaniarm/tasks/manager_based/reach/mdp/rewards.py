@@ -23,25 +23,32 @@ if TYPE_CHECKING:
 
 
 def position_command_error(env: ManagerBasedRLEnv, command_name: str, asset_cfg: SceneEntityCfg) -> torch.Tensor:
-    """L2 distance (world frame) between `left_ee_link` and the sampled target."""
+    """Y-Z distance (world frame) between `left_ee_link` and the sampled target.
+
+    The 5-bar planar mechanism kinematically pins the EE's X coordinate
+    at +0.071 m and `CommandsCfg.ranges.pos_x` matches it, so the X term
+    of a full L2 norm is mathematically ~0. Slicing it out makes the
+    intent explicit and removes any tiny X jitter from physics solver
+    slop from leaking into the reward.
+    """
     asset: RigidObject = env.scene[asset_cfg.name]
     command = env.command_manager.get_command(command_name)
     des_pos_b = command[:, :3]
     des_pos_w, _ = combine_frame_transforms(asset.data.root_pos_w, asset.data.root_quat_w, des_pos_b)
     curr_pos_w = asset.data.body_pos_w[:, asset_cfg.body_ids[0]]
-    return torch.norm(curr_pos_w - des_pos_w, dim=1)
+    return torch.norm((curr_pos_w - des_pos_w)[:, 1:3], dim=1)
 
 
 def position_command_error_tanh(
     env: ManagerBasedRLEnv, std: float, command_name: str, asset_cfg: SceneEntityCfg
 ) -> torch.Tensor:
-    """Smooth shaping reward: `1 - tanh(d / std)`."""
+    """Smooth shaping reward over Y-Z distance: `1 - tanh(d_yz / std)`."""
     asset: RigidObject = env.scene[asset_cfg.name]
     command = env.command_manager.get_command(command_name)
     des_pos_b = command[:, :3]
     des_pos_w, _ = combine_frame_transforms(asset.data.root_pos_w, asset.data.root_quat_w, des_pos_b)
     curr_pos_w = asset.data.body_pos_w[:, asset_cfg.body_ids[0]]
-    distance = torch.norm(curr_pos_w - des_pos_w, dim=1)
+    distance = torch.norm((curr_pos_w - des_pos_w)[:, 1:3], dim=1)
     return 1 - torch.tanh(distance / std)
 
 
