@@ -760,7 +760,7 @@
       <material
         name="">
         <color
-          rgba="0.25098 0.25098 0.25098 1" />
+          rgba="0.79216 0.81961 0.93333 1" />
       </material>
     </visual>
     <collision>
