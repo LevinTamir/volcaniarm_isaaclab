@@ -44,8 +44,13 @@ args_cli, hydra_args = parser.parse_known_args()
 if args_cli.video:
     args_cli.enable_cameras = True
 
+# Mirror train.py: route Hydra's `outputs/<date>/<time>/` under the
+# per-task subfolder so play runs land alongside their training runs.
+_task_subdir = cli_args.task_log_subdir(args_cli.task)
+_hydra_run_dir_override = f"hydra.run.dir=outputs/{_task_subdir}/${{now:%Y-%m-%d}}/${{now:%H-%M-%S}}"
+
 # clear out sys.argv for Hydra
-sys.argv = [sys.argv[0]] + hydra_args
+sys.argv = [sys.argv[0], _hydra_run_dir_override] + hydra_args
 
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
