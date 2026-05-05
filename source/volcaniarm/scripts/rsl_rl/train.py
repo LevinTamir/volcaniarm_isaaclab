@@ -224,6 +224,39 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
     dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
 
+    # If the env has an RGB camera, push sample frames into TB every
+    # `image_log_interval` iters so the IMAGES tab shows what the policy
+    # actually sees — useful for verifying that domain randomization is
+    # firing across runs and for spotting visual sim-to-real gaps early.
+    image_log_interval = 25
+    unwrapped_env = env.unwrapped
+    camera_name = None
+    for sensor_name, sensor in unwrapped_env.scene.sensors.items():
+        try:
+            if "rgb" in sensor.data.output:
+                camera_name = sensor_name
+                break
+        except (AttributeError, KeyError):
+            continue
+    if camera_name is not None:
+        print(f"[INFO] Logging frames from '{camera_name}' to TB every {image_log_interval} iters")
+        _orig_log = runner.log
+
+        def _log_with_images(locs, width=80, pad=35):
+            _orig_log(locs, width=width, pad=pad)
+            it = locs.get("it", 0)
+            if it % image_log_interval != 0:
+                return
+            rgb = unwrapped_env.scene[camera_name].data.output["rgb"]
+            n = min(4, rgb.shape[0])
+            sample = rgb[:n].detach()
+            sample = sample.float() / 255.0 if sample.dtype == torch.uint8 else sample
+            # (N, H, W, 3) -> (N, 3, H, W) for TB.
+            sample = sample.permute(0, 3, 1, 2).clamp(0.0, 1.0)
+            runner.writer.add_images("Camera/samples", sample, it)
+
+        runner.log = _log_with_images
+
     # run training
     runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
 
