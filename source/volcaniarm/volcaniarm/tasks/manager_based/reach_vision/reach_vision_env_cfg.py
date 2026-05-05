@@ -279,7 +279,7 @@ class ObservationsCfg:
 
 @configclass
 class EventCfg:
-    """Reset events: arm joints + plant pose + plant colour."""
+    """Reset + interval events: joint reset, plant pose, lighting, colour, camera DR."""
 
     reset_robot_joints = EventTerm(
         func=mdp.reset_joints_by_offset,
@@ -307,6 +307,75 @@ class EventCfg:
                 "z": (0.98 + PLANT_Z_RANGE[0], 0.98 + PLANT_Z_RANGE[1]),
             },
             "velocity_range": {},
+        },
+    )
+
+    # Mid-episode plant resample — gives ~3 reach attempts per 12 s episode
+    # instead of 1, tripling the on-policy reaching signal per env per iter.
+    resample_plant_pose = EventTerm(
+        func=mdp.reset_root_state_uniform,
+        mode="interval",
+        interval_range_s=(4.0, 4.0),
+        is_global_time=False,
+        params={
+            "asset_cfg": SceneEntityCfg("plant"),
+            "pose_range": {
+                "x": (PLANT_X_BASE, PLANT_X_BASE),
+                "y": PLANT_Y_RANGE,
+                "z": (0.98 + PLANT_Z_RANGE[0], 0.98 + PLANT_Z_RANGE[1]),
+            },
+            "velocity_range": {},
+        },
+    )
+
+    # Floor color jitter — small variation around the concrete-grey base.
+    # Global asset (one prim shared across envs); the change applies to all
+    # envs from the next render onward.
+    randomize_floor_color = EventTerm(
+        func=mdp.randomize_visual_color_global,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("ground"),
+            "base_color": FLOOR_COLOR,
+            "variation": 0.05,
+        },
+    )
+
+    # Dome light: ±25% intensity, ±10% balanced color drift.
+    randomize_dome = EventTerm(
+        func=mdp.randomize_light,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("dome"),
+            "intensity_range": (320.0, 480.0),
+            "color_base": (0.75, 0.75, 0.75),
+            "color_variation": 0.10,
+        },
+    )
+
+    # Sun light: ±25% intensity, ±10% balanced color drift (warm bias kept).
+    randomize_sun = EventTerm(
+        func=mdp.randomize_light,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("sun"),
+            "intensity_range": (900.0, 1500.0),
+            "color_base": (1.0, 1.0, 0.95),
+            "color_variation": 0.10,
+        },
+    )
+
+    # Camera pose jitter — per-env, additive on each reset. Small std
+    # values keep the accumulated drift bounded over a 3000-iter run
+    # (drift ≈ σ·√N_resets; with σ_pos=1 mm, σ_rpy≈0.17°, that's ~2 cm
+    # and ~3° by training end — within plausible mounting tolerance.)
+    randomize_camera_pose = EventTerm(
+        func=mdp.randomize_camera_pose,
+        mode="reset",
+        params={
+            "sensor_name": "base_camera",
+            "pos_std": (0.001, 0.001, 0.001),
+            "rpy_std": (0.003, 0.003, 0.003),
         },
     )
 

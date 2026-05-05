@@ -11,6 +11,11 @@ and a privileged plant-pose observation.
 from isaaclab.envs.mdp import *  # noqa: F401, F403
 
 from ...reach.mdp.rewards import joint_pos_out_of_range  # noqa: F401
+from .events import (  # noqa: F401
+    randomize_camera_pose,
+    randomize_light,
+    randomize_visual_color_global,
+)
 from .rewards import (  # noqa: F401
     plant_pos_in_base,
     position_plant_error,
