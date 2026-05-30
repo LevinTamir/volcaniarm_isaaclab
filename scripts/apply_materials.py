@@ -35,7 +35,6 @@ MATERIAL_GROUPS = {
         "metallic": 1.0,
         "roughness": 0.45,
         "links": [
-            "volcaniarm_base_link",
             "volcaniarm_left_elbow_link",
             "volcaniarm_left_arm_link",
             "left_ee_link",
@@ -52,6 +51,15 @@ MATERIAL_GROUPS = {
             "rl_caster_wheel_link",
             "rr_caster_wheel_mount_link",
             "rr_caster_wheel_link",
+        ],
+    },
+    "pbr_metallic_black": {
+        # Painted black steel base — fully metallic, mid-rough like the galvanized profiles.
+        "base_color": (0.02, 0.02, 0.02),
+        "metallic": 1.0,
+        "roughness": 0.4,
+        "links": [
+            "volcaniarm_base_link",
         ],
     },
     "pbr_red_metallic": {

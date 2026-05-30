@@ -221,7 +221,7 @@ class VolcaniarmReachEnvCfg(ManagerBasedRLEnvCfg):
     def __post_init__(self):
         self.decimation = 2
         self.episode_length_s = 12.0
-        self.viewer.eye = (2.5, 2.5, 2.0)
+        self.viewer.eye = (15.0, 15.0, 10.0)
         self.sim.dt = 1.0 / 60.0
         self.sim.render_interval = self.decimation
 
@@ -232,4 +232,7 @@ class VolcaniarmReachEnvCfg_PLAY(VolcaniarmReachEnvCfg):
         super().__post_init__()
         self.scene.num_envs = 50
         self.scene.env_spacing = 2.5
+        # Single-arm play rollout: keep the camera close (the wide train framing
+        # would shrink one arm to a dot).
+        self.viewer.eye = (2.5, 2.5, 2.0)
         self.observations.policy.enable_corruption = False
