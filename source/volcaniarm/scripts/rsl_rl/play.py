@@ -20,6 +20,12 @@ parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
 parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
 parser.add_argument("--video_length", type=int, default=200, help="Length of the recorded video (in steps).")
 parser.add_argument(
+    "--video_name",
+    type=str,
+    default="rl-video",
+    help="Filename prefix for the recorded play video (lets repeat runs avoid overwriting).",
+)
+parser.add_argument(
     "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
 )
 parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
@@ -135,6 +141,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             "step_trigger": lambda step: step == 0,
             "video_length": args_cli.video_length,
             "disable_logger": True,
+            "name_prefix": args_cli.video_name,
         }
         print("[INFO] Recording videos during training.")
         print_dict(video_kwargs, nesting=4)

@@ -230,9 +230,13 @@ class VolcaniarmReachEnvCfg(ManagerBasedRLEnvCfg):
 class VolcaniarmReachEnvCfg_PLAY(VolcaniarmReachEnvCfg):
     def __post_init__(self):
         super().__post_init__()
-        self.scene.num_envs = 50
+        # Single arm for validation.
+        self.scene.num_envs = 1
         self.scene.env_spacing = 2.5
-        # Single-arm play rollout: keep the camera close (the wide train framing
-        # would shrink one arm to a dot).
-        self.viewer.eye = (2.5, 2.5, 2.0)
+        # Same isometric 3/4 angle as the training view (equal x/y, elevated
+        # z) but pulled in to ~2.2 m on the one arm, centred on its workspace
+        # (EE at z≈0.21 up to the black base mount at z≈0.96).
+        self.viewer.origin_type = "world"
+        self.viewer.eye = (1.4, 1.4, 1.5)
+        self.viewer.lookat = (0.0, 0.0, 0.55)
         self.observations.policy.enable_corruption = False
