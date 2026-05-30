@@ -26,6 +26,15 @@ parser.add_argument(
     help="Filename prefix for the recorded play video (lets repeat runs avoid overwriting).",
 )
 parser.add_argument(
+    "--log_ee_error",
+    action="store_true",
+    default=False,
+    help="Record per-step EE position error over the rollout, save play_ee_error.npz, and print a summary.",
+)
+parser.add_argument(
+    "--command_name", type=str, default="ee_pose", help="Command term to read position_error from (--log_ee_error)."
+)
+parser.add_argument(
     "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
 )
 parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
@@ -65,9 +74,11 @@ simulation_app = app_launcher.app
 """Rest everything follows."""
 
 import os
+import re
 import time
 
 import gymnasium as gym
+import numpy as np
 import torch
 from rsl_rl.runners import DistillationRunner, OnPolicyRunner
 
@@ -187,6 +198,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     dt = env.unwrapped.step_dt
 
+    # optional EE-error logging over the rollout
+    ee_term = env.unwrapped.command_manager.get_term(args_cli.command_name) if args_cli.log_ee_error else None
+    ee_errs, ee_tleft = [], []
+
     # reset environment
     obs = env.get_observations()
     timestep = 0
@@ -201,9 +216,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             obs, _, dones, _ = env.step(actions)
             # reset recurrent states for episodes that have terminated
             policy_nn.reset(dones)
-        if args_cli.video:
+        if args_cli.log_ee_error:
+            ee_errs.append(ee_term.metrics["position_error"].detach().cpu().numpy().copy())
+            ee_tleft.append(ee_term.time_left.detach().cpu().numpy().copy())
+        if args_cli.video or args_cli.log_ee_error:
             timestep += 1
-            # Exit the play loop after recording one video
+            # Exit the play loop after the recording / logging window
             if timestep == args_cli.video_length:
                 break
 
@@ -211,6 +229,30 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         sleep_time = dt - (time.time() - start_time)
         if args_cli.real_time and sleep_time > 0:
             time.sleep(sleep_time)
+
+    # save the EE-error log + print a summary
+    if args_cli.log_ee_error and ee_errs:
+        m = re.search(r"model_(\d+)", os.path.basename(resume_path))
+        iteration = int(m.group(1)) if m else -1
+        out_dir = os.path.join(log_dir, "plots")
+        os.makedirs(out_dir, exist_ok=True)
+        out = os.path.join(out_dir, "play_ee_error.npz")
+        err, tleft = np.asarray(ee_errs), np.asarray(ee_tleft)
+        np.savez(
+            out,
+            error=err,
+            time_left=tleft,
+            resample_period=float(ee_term.cfg.resampling_time_range[1]),
+            step_dt=float(env.unwrapped.step_dt),
+            iteration=iteration,
+        )
+        settled = err[tleft < 1.0]
+        print(f"[INFO] EE error over {err.shape[0]} steps x {err.shape[1]} env(s) (iter {iteration}):")
+        print(
+            f"       episode-mean {err.mean()*100:.2f} cm | settled median {np.median(settled)*100:.2f} cm | "
+            f"within 2 cm {(settled < 0.02).mean()*100:.1f}%"
+        )
+        print(f"[INFO] Wrote {out}")
 
     # close the simulator
     env.close()
