@@ -28,6 +28,7 @@ import trimesh
 from pathlib import Path
 
 from isaaclab.sim.converters import MeshConverter, MeshConverterCfg
+from isaaclab.sim.schemas import schemas_cfg
 
 PROJECT = Path(__file__).resolve().parent.parent
 USD_DIR = PROJECT / "assets/usd"
@@ -179,12 +180,27 @@ def main() -> None:
             # conversions silently overwrite each other's meshes. At 15k faces
             # the geometry is ~130 KB inline; env cloning still instances it.
             make_instanceable=False,
-            # Visual-only prop: the weed is a reach *target*, never touched.
-            # No mass/rigid/collision props keeps it cheap and stops it being
-            # knocked around mid-episode.
-            collision_props=None,
-            rigid_props=None,
-            mass_props=None,
+            # The physics schemas MUST be baked in here, not left to the env
+            # cfg. `UsdFileCfg` calls `schemas.modify_*`, which only touches
+            # prims that already carry the schema — it cannot *apply*
+            # RigidBodyAPI. Without this the scene fails at init with
+            # "Failed to find a rigid body when resolving .../Weed".
+            #
+            # Kinematic: the weed is a reach target that we teleport on reset
+            # via `reset_root_state_uniform`. It must never respond to forces
+            # or be knocked around by the arm mid-episode.
+            rigid_props=schemas_cfg.RigidBodyPropertiesCfg(
+                rigid_body_enabled=True,
+                kinematic_enabled=True,
+                disable_gravity=True,
+            ),
+            mass_props=schemas_cfg.MassPropertiesCfg(mass=0.05),
+            # A collider has to exist for PhysX to register the body, but it
+            # stays disabled — the EE is meant to reach *to* the weed, not
+            # collide with it. Bounding-cube approximation avoids a convex
+            # decomposition over 14k faces that would never be used.
+            collision_props=schemas_cfg.CollisionPropertiesCfg(collision_enabled=False),
+            mesh_collision_props=schemas_cfg.BoundingCubePropertiesCfg(),
         )
         MeshConverter(cfg)
 

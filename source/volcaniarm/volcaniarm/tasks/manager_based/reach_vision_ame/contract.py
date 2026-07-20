@@ -54,11 +54,25 @@ LCC_KERNEL = 7
 # TODO(calibration): replace with the median HSV measured over weed pixels
 # in a real RealSense frame. The photo estimate is a phone image with unknown
 # white balance and is not authoritative. See verification step 4 in the plan.
+# Calibrated against the ACTUAL rendered frame, not the material constant —
+# lighting and tonemapping shift the weed's colour in the image. Measured over
+# green-dominant pixels in the AME scene:
+#     hue  p05=0.4222  median=0.4383  p95=0.4431   (OpenCV H ~79)
+#     sat  p05=0.3152  median=0.4576  p95=0.4878
+#     val  p05=0.2157  median=0.6235  p95=0.7176
+# The previous values (centre 0.375, sat/val floors 0.2353) capped the mask at
+# 0.81: the hue was 0.06 off-centre, and val_min sat *above* the 5th percentile
+# so shadowed weed pixels were cut entirely.
+#
+# The floors are safe to lower because saturation, not value, is what
+# discriminates against the black mat — the mat is ~(0.04,0.04,0.04), i.e.
+# effectively zero saturation, so it can never enter the band however dim the
+# value gate gets.
 GREEN_NOMINAL = dict(
-    hue_center=0.375,      # OpenCV H ~67.5
-    hue_halfwidth=0.115,   # covers H ~47..88
-    sat_min=0.2353,        # 60/255, unchanged from the deployed detector
-    val_min=0.2353,        # 60/255
+    hue_center=0.435,      # OpenCV H ~78
+    hue_halfwidth=0.120,   # covers H ~57..100; still admits natural green at 60
+    sat_min=0.18,
+    val_min=0.12,
     softness=0.04,         # sigmoid width; ~7 OpenCV-hue units of soft edge
 )
 

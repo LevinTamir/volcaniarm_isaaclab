@@ -114,11 +114,13 @@ class VolcaniarmReachVisionAmeSceneCfg(VolcaniarmReachVisionSceneCfg):
             mass_props=sim_utils.MassPropertiesCfg(mass=0.05),
             collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
         ),
-        # Overwritten on every reset by `randomize_weed_pose`. Spawn z is the
-        # canopy height, which seats the mesh base on the mat at z=0.
-        init_state=RigidObjectCfg.InitialStateCfg(
-            pos=(WEED_X_BASE, 0.0, WEED_SPAWN_Z_WORLD)
-        ),
+        # Deliberately the origin. `reset_root_state_uniform` computes
+        # `default_root_state + env_origin + sample`, so the pose_range is an
+        # OFFSET, not an absolute position — putting the spawn pose here as
+        # well would double-count it (and did: the weed landed at 2x both
+        # X and Z). Keeping this at zero makes the event's ranges read as
+        # absolute env-local coordinates, which is what they look like.
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
     )
 
 
