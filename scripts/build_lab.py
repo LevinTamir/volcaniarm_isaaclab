@@ -53,6 +53,13 @@ WALL_HEIGHT = 2.6
 # neither is ever visible to the arm-mounted camera.
 BUILD_CEILING = False
 BUILD_FRONT_WALL = False      # the +X wall, in front of the arm
+
+# Workshop furniture. Off by default: none of it is visible to the
+# arm-mounted camera, and the vision policy only ever sees the green mask, so
+# it contributes nothing to the env. Kept behind flags because it is useful
+# for renders and for matching the Gazebo lab visually.
+BUILD_WORKBENCH = False       # bench + blue pegboard
+BUILD_DESK = False
 CEILING_THICKNESS = 0.1
 FLOOR_THICKNESS = 0.02
 
@@ -456,8 +463,10 @@ def main() -> None:
 
     ceiling_center_z = _add_room_shell(overlay)
     mat_top_z = _add_floor_mat(overlay)
-    _add_workbench(overlay)
-    _add_desk(overlay)
+    if BUILD_WORKBENCH:
+        _add_workbench(overlay)
+    if BUILD_DESK:
+        _add_desk(overlay)
     # The decorative fern is deliberately not built any more — see _add_weed.
     _add_weed(overlay, mat_top_z)
     _add_ceiling_light(overlay, ceiling_center_z)
