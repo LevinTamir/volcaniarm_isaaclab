@@ -36,9 +36,15 @@ OVERLAY_USD = PROJECT / "assets/usd/volcaniarm_lab.usd"
 LAB_PATH = "/World/Lab"
 FLOOR_Z_TOP = 0.001          # 1 mm above grey-ground top (z=0) — just enough
                              # to dodge z-fight without a visible step under the wheels
-ROOM_HALF = 4.0              # interior half-width → 8x8 m room
+# Room interior bounds, expressed as distances from the robot at the origin
+# rather than a symmetric half-width — the rig sits close to the back wall in
+# the real lab, and that wall is what fills the camera's background.
+# Robot faces +X, so -X is "behind the arm".
+ROOM_BACK_X = -0.5           # white wall 0.5 m behind the arm
+ROOM_FRONT_X = 3.0
+ROOM_HALF_Y = 2.0
 WALL_THICKNESS = 0.1
-WALL_HEIGHT = 3.5
+WALL_HEIGHT = 2.6
 CEILING_THICKNESS = 0.1
 FLOOR_THICKNESS = 0.02
 
@@ -57,14 +63,19 @@ POT_RIM_COLOR = Gf.Vec3f(0.60, 0.35, 0.22)   # slightly lighter rim
 # in the real lab the mat covers only part of the view and light concrete is
 # visible past its edge, which is what the photo shows.
 MAT_COLOR = Gf.Vec3f(0.04, 0.04, 0.04)
-MAT_SIZE = (2.4, 1.8)        # X, Y extent in metres — tune to the real mat
+MAT_ROUGHNESS = 0.95         # matte rubber — see _add_floor_mat
+MAT_SIZE = (2.0, 1.6)        # X, Y extent in metres — tune to the real mat
 MAT_THICKNESS = 0.006
-MAT_CENTER = (0.0, 0.0)
+MAT_CENTER = (0.35, 0.0)     # shifted forward: the back wall is only 0.5 m away
 
 # The 3D-printed weed, built by scripts/convert_weed.py. Origin is at the
 # canopy apex, so translate by +height to seat the base on the mat.
 WEED_USD = PROJECT / "assets/usd/fake_weed.usd"
-WEED_HEIGHT = 0.20
+WEED_USD_HEIGHT = 0.20       # height baked into the asset by convert_weed.py
+# Real printed part: the small STL at its authored scale. This world is a
+# visual reference, so it matches the physical object rather than the
+# training task, which uses a taller weed for reachability reasons.
+WEED_HEIGHT = 0.073
 WEED_COLOR = Gf.Vec3f(0.24, 0.75, 0.51)
 WEED_XY = (0.071, 0.10)      # on the mat, inside the arm's reachable Y span
 
@@ -116,22 +127,24 @@ def _add_sphere(stage, path, radius, translate, color, scale=(1.0, 1.0, 1.0)):
 
 
 def _add_room_shell(overlay):
-    wall_span = 2 * ROOM_HALF + 2 * WALL_THICKNESS
+    span_x = ROOM_FRONT_X - ROOM_BACK_X + 2 * WALL_THICKNESS
+    span_y = 2 * ROOM_HALF_Y + 2 * WALL_THICKNESS
+    mid_x = 0.5 * (ROOM_FRONT_X + ROOM_BACK_X)
     wall_center_z = FLOOR_Z_TOP + WALL_HEIGHT / 2.0
-    wall_offset = ROOM_HALF + WALL_THICKNESS / 2.0
 
     _add_box(
         overlay, f"{LAB_PATH}/Floor",
-        scale=(wall_span, wall_span, FLOOR_THICKNESS),
-        translate=(0.0, 0.0, FLOOR_Z_TOP - FLOOR_THICKNESS / 2.0),
+        scale=(span_x, span_y, FLOOR_THICKNESS),
+        translate=(mid_x, 0.0, FLOOR_Z_TOP - FLOOR_THICKNESS / 2.0),
         color=FLOOR_COLOR,
     )
 
+    y_off = ROOM_HALF_Y + WALL_THICKNESS / 2.0
     for name, sx, sy, tx, ty in [
-        ("WallNorth", wall_span, WALL_THICKNESS, 0.0, wall_offset),
-        ("WallSouth", wall_span, WALL_THICKNESS, 0.0, -wall_offset),
-        ("WallEast", WALL_THICKNESS, wall_span, wall_offset, 0.0),
-        ("WallWest", WALL_THICKNESS, wall_span, -wall_offset, 0.0),
+        ("WallNorth", span_x, WALL_THICKNESS, mid_x, y_off),
+        ("WallSouth", span_x, WALL_THICKNESS, mid_x, -y_off),
+        ("WallEast", WALL_THICKNESS, span_y, ROOM_FRONT_X + WALL_THICKNESS / 2.0, 0.0),
+        ("WallWest", WALL_THICKNESS, span_y, ROOM_BACK_X - WALL_THICKNESS / 2.0, 0.0),
     ]:
         _add_box(
             overlay, f"{LAB_PATH}/{name}",
@@ -143,37 +156,42 @@ def _add_room_shell(overlay):
     ceiling_center_z = FLOOR_Z_TOP + WALL_HEIGHT + CEILING_THICKNESS / 2.0
     _add_box(
         overlay, f"{LAB_PATH}/Ceiling",
-        scale=(wall_span, wall_span, CEILING_THICKNESS),
-        translate=(0.0, 0.0, ceiling_center_z),
+        scale=(span_x, span_y, CEILING_THICKNESS),
+        translate=(mid_x, 0.0, ceiling_center_z),
         color=CEILING_COLOR,
     )
     return ceiling_center_z
 
 
 def _add_workbench(overlay):
-    # West-wall workbench — behind the robot (robot faces +X). 3 m long along
-    # the wall (Y axis), 0.7 m deep out from the wall (X axis), top 0.9 m up.
-    # Blue pegboard panel mounted flush to the wall behind it.
-    bench_l, bench_d, bench_th = 3.0, 0.7, 0.05  # length-along-wall, depth, top thickness
+    """Workbench + blue pegboard, on the SOUTH side wall.
+
+    Deliberately not behind the arm any more. The back wall is what fills the
+    camera's background, and in the real lab that is bare white — a 3 m blue
+    pegboard there is both wrong and a large saturated distractor sitting
+    directly behind the target. Moved to the -Y side wall, out of frame.
+    """
+    bench_l, bench_d, bench_th = 2.0, 0.6, 0.05  # length-along-wall(X), depth(Y), top
     top_z = FLOOR_Z_TOP + 0.90
-    x_center = -(ROOM_HALF - bench_d / 2.0 - 0.02)  # 2 cm clear of wall
+    y_center = -(ROOM_HALF_Y - bench_d / 2.0 - 0.02)  # 2 cm clear of wall
+    x_center = 1.4  # forward of the arm, clear of its sweep
 
     _add_box(
         overlay, f"{LAB_PATH}/BenchTop",
-        scale=(bench_d, bench_l, bench_th),
-        translate=(x_center, 0.0, top_z - bench_th / 2.0),
+        scale=(bench_l, bench_d, bench_th),
+        translate=(x_center, y_center, top_z - bench_th / 2.0),
         color=BENCH_TOP_COLOR,
     )
 
     leg_h = top_z - bench_th - FLOOR_Z_TOP
     leg_size = 0.05
     leg_z = FLOOR_Z_TOP + leg_h / 2.0
-    leg_y = bench_l / 2.0 - leg_size
-    leg_x_front = x_center - bench_d / 2.0 + leg_size / 2.0
-    leg_x_back = x_center + bench_d / 2.0 - leg_size / 2.0
+    leg_x = bench_l / 2.0 - leg_size
+    leg_y_front = y_center + bench_d / 2.0 - leg_size / 2.0
+    leg_y_back = y_center - bench_d / 2.0 + leg_size / 2.0
     for i, (lx, ly) in enumerate([
-        (leg_x_front, leg_y), (leg_x_front, -leg_y),
-        (leg_x_back, leg_y), (leg_x_back, -leg_y),
+        (x_center + leg_x, leg_y_front), (x_center - leg_x, leg_y_front),
+        (x_center + leg_x, leg_y_back), (x_center - leg_x, leg_y_back),
     ]):
         _add_box(
             overlay, f"{LAB_PATH}/BenchLeg{i}",
@@ -182,14 +200,13 @@ def _add_workbench(overlay):
             color=BENCH_LEG_COLOR,
         )
 
-    peg_l, peg_h, peg_thickness = bench_l, 1.2, 0.03
-    peg_bottom = top_z + 0.02
-    peg_center_z = peg_bottom + peg_h / 2.0
-    peg_x = -(ROOM_HALF - peg_thickness / 2.0 - 0.001)  # flush to wall, no z-fight
+    peg_l, peg_h, peg_thickness = bench_l, 1.0, 0.03
+    peg_center_z = top_z + 0.02 + peg_h / 2.0
+    peg_y = -(ROOM_HALF_Y - peg_thickness / 2.0 - 0.001)  # flush to wall
     _add_box(
         overlay, f"{LAB_PATH}/Pegboard",
-        scale=(peg_thickness, peg_l, peg_h),
-        translate=(peg_x, 0.0, peg_center_z),
+        scale=(peg_l, peg_thickness, peg_h),
+        translate=(x_center, peg_y, peg_center_z),
         color=PEGBOARD_COLOR,
     )
 
@@ -199,7 +216,7 @@ def _add_desk(overlay):
     # 1.4 m long along X, 0.6 m deep out from the wall.
     desk_w, desk_d, desk_th = 1.4, 0.6, 0.05
     top_z = FLOOR_Z_TOP + 0.75
-    y_center = ROOM_HALF - desk_d / 2.0 - 0.02
+    y_center = ROOM_HALF_Y - desk_d / 2.0 - 0.02
     x_center = 1.5  # offset from centerline so it sits clear of the arm sweep
 
     _add_box(
@@ -233,13 +250,23 @@ def _add_floor_mat(overlay):
 
     Sits 1 mm proud of the floor so there is no z-fighting between the two
     coplanar boxes.
+
+    The material binding is the load-bearing part. `_add_box` only authors
+    `displayColor`, which is a viewport *hint* — under RTX the prim falls back
+    to the default surface, which is glossy, so a "black" mat still renders
+    with bright specular highlights. Binding an explicit PreviewSurface at
+    roughness ~0.95 with no specular is what actually makes it matte.
     """
     mx, my = MAT_CENTER
-    _add_box(
+    mat = _add_box(
         overlay, f"{LAB_PATH}/FloorMat",
         scale=(MAT_SIZE[0], MAT_SIZE[1], MAT_THICKNESS),
         translate=(mx, my, FLOOR_Z_TOP + MAT_THICKNESS / 2.0),
         color=MAT_COLOR,
+    )
+    _bind_color(
+        overlay, mat.GetPrim(), MAT_COLOR, f"{LAB_PATH}/Looks/MatBlack",
+        roughness=MAT_ROUGHNESS, specular=0.0,
     )
     return FLOOR_Z_TOP + MAT_THICKNESS
 
@@ -262,19 +289,24 @@ def _add_weed(overlay, mat_top_z):
             f"Run scripts/convert_weed.py first — missing {WEED_USD}"
         )
     x, y = WEED_XY
+    # The asset is baked at WEED_USD_HEIGHT with its origin at the apex, so a
+    # rescale has to move the translate by the same factor or the base lifts
+    # off the mat.
+    scale = WEED_HEIGHT / WEED_USD_HEIGHT
     weed = overlay.DefinePrim(f"{LAB_PATH}/Weed", "Xform")
     weed.GetReferences().AddReference(str(WEED_USD))
     xf = UsdGeom.Xformable(weed)
     xf.AddTranslateOp(opSuffix="place").Set(
         Gf.Vec3d(x, y, mat_top_z + WEED_HEIGHT)
     )
+    xf.AddScaleOp(opSuffix="size").Set(Gf.Vec3f(scale, scale, scale))
 
     # Bind the green material here rather than baking it into the asset, so
     # the colour stays in one place alongside the training-side WEED_COLOR.
     _bind_color(overlay, weed, WEED_COLOR, f"{LAB_PATH}/Looks/WeedGreen")
 
 
-def _bind_color(overlay, prim, color, mat_path):
+def _bind_color(overlay, prim, color, mat_path, roughness=0.6, specular=0.5):
     """Author a PreviewSurface material and bind it to `prim`."""
     from pxr import Sdf, UsdShade
 
@@ -282,8 +314,9 @@ def _bind_color(overlay, prim, color, mat_path):
     shader = UsdShade.Shader.Define(overlay, f"{mat_path}/Shader")
     shader.CreateIdAttr("UsdPreviewSurface")
     shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(color)
-    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.6)
+    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(roughness)
     shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
+    shader.CreateInput("specular", Sdf.ValueTypeNames.Float).Set(specular)
     material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
     UsdShade.MaterialBindingAPI.Apply(prim)
     UsdShade.MaterialBindingAPI(prim).Bind(
