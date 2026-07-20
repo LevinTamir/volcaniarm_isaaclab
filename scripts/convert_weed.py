@@ -37,15 +37,16 @@ BUILD_DIR = USD_DIR / "_build"
 
 # Source STL and the real-world height to scale it to.
 #
-# Why 20 cm and not the authored 7.3 cm: `scripts/check_workspace.py` shows the
-# EE bottoms out at z=0.052 m — the arm physically cannot reach the mat, at any
-# joint angle. So the reach target has to be the weed's canopy, and the
-# reachable Y span depends strongly on how high that canopy sits:
+# 0.11 m is 1.5x the authored 73.35 mm — a print you can actually make, while
+# staying reachable. `scripts/check_workspace.py` shows the EE bottoms out at
+# z=0.052 m: the arm physically cannot reach the mat at any joint angle, so
+# the reach target is the weed's *canopy*, and the reachable Y span depends
+# strongly on how high that canopy sits (elbows within the reward's +-75 deg):
 #     canopy 0.075 m -> Y span 0.20 m      canopy 0.20 m -> Y span 0.58 m
-#     canopy 0.14  m -> Y span 0.38 m      canopy >0.30 m -> unreachable
-# 20 cm puts the canopy in the widest part of the envelope.
+#     canopy 0.11  m -> Y span 0.25 m      canopy >0.30 m -> unreachable
+# At 0.11 m the canopy clears the EE floor by ~6 cm and Y spans ~+-0.10.
 SOURCES = {
-    "fake_weed": (STL_DIR / "fake_weed.stl", 0.20),
+    "fake_weed": (STL_DIR / "fake_weed.stl", 0.11),
 }
 
 # The USD is geometry only — the green material is bound at spawn time via

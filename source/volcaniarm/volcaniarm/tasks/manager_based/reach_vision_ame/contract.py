@@ -103,7 +103,8 @@ MAT_ROUGHNESS = 0.9
 # the mat. Spawning at world z = WEED_HEIGHT_M therefore seats the base at
 # z=0 while `position_weed_error` / `weed_pos_in_base` keep working against
 # root_pos_w with no offset term to maintain.
-WEED_HEIGHT_M = 0.20
+# 1.5x the authored STL height. Must match the target in convert_weed.py.
+WEED_HEIGHT_M = 0.11
 WEED_SPAWN_Z_WORLD = WEED_HEIGHT_M
 
 # X is pinned: the 5-bar is planar and the EE only ever reaches x=0.071.
@@ -111,12 +112,18 @@ WEED_X_BASE = 0.071
 
 # Y sampling range, measured not assumed — see scripts/check_workspace.py.
 # The EE floor is z=0.052 m (the arm CANNOT reach the mat at any joint angle),
-# and the reachable Y span is height-dependent. At the canopy height of 0.20 m
-# the envelope is roughly y in [-0.29, 0.30] within the reward's in-range elbow
-# bound, so +-0.20 sits comfortably inside it.
+# and the reachable Y span is height-dependent. In the 0.100-0.125 m band the
+# envelope is y in [-0.103, 0.143] within the reward's in-range elbow bound,
+# so a symmetric +-0.10 sits inside it with margin on both sides.
 #
 # NOTE: the older `reach` / `reach_vision` tasks sample y in (-0.50, 0.50)
 # while the reachable envelope is only [-0.287, 0.299] — roughly 40% of their
 # targets were never reachable. Left as-is on purpose so their baselines still
 # describe what was actually trained.
-WEED_Y_RANGE = (-0.20, 0.20)
+WEED_Y_RANGE = (-0.10, 0.10)
+
+# Canopy height jitter, applied on top of WEED_SPAWN_Z_WORLD. Small and
+# one-sided-upward: it stands in for weeds of slightly different size rather
+# than a weed floating off the mat, and it keeps the target inside the band
+# the Y range was measured for. Set to (0.0, 0.0) to pin the canopy exactly.
+WEED_Z_JITTER = (0.0, 0.03)

@@ -11,7 +11,8 @@ Differs from `reach_vision`:
   is at the canopy apex (see `scripts/convert_weed.py`), so `root_pos_w` is the
   reach target and the mesh hangs down to z=0. The arm cannot reach the mat
   itself — the EE floor is z=0.052 m — so the canopy is the only sensible
-  target, and 20 cm puts it in the widest part of the reachable envelope.
+  target. The weed is 11 cm (1.5x the authored STL), which clears that floor
+  by ~6 cm and gives a measured Y span of about +-0.10 m.
 - **Observations are three groups, not two.** The image is no longer squeezed
   through a frozen ResNet18 into 1000 ImageNet logits; instead the raw camera
   frame is reduced to a green-coverage map that the policy's own CNN consumes.
@@ -52,6 +53,7 @@ from .contract import (
     WEED_SPAWN_Z_WORLD,
     WEED_X_BASE,
     WEED_Y_RANGE,
+    WEED_Z_JITTER,
 )
 
 ELBOW_JOINTS = ["volcaniarm_(left|right)_elbow_joint"]
@@ -228,7 +230,10 @@ class AmeEventCfg:
             "pose_range": {
                 "x": (WEED_X_BASE, WEED_X_BASE),
                 "y": WEED_Y_RANGE,
-                "z": (WEED_SPAWN_Z_WORLD, WEED_SPAWN_Z_WORLD),
+                "z": (
+                    WEED_SPAWN_Z_WORLD + WEED_Z_JITTER[0],
+                    WEED_SPAWN_Z_WORLD + WEED_Z_JITTER[1],
+                ),
             },
             "velocity_range": {},
         },
@@ -245,7 +250,10 @@ class AmeEventCfg:
             "pose_range": {
                 "x": (WEED_X_BASE, WEED_X_BASE),
                 "y": WEED_Y_RANGE,
-                "z": (WEED_SPAWN_Z_WORLD, WEED_SPAWN_Z_WORLD),
+                "z": (
+                    WEED_SPAWN_Z_WORLD + WEED_Z_JITTER[0],
+                    WEED_SPAWN_Z_WORLD + WEED_Z_JITTER[1],
+                ),
             },
             "velocity_range": {},
         },

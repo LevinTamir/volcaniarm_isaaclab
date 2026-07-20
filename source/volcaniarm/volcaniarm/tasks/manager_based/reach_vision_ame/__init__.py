@@ -3,12 +3,11 @@
 
 import gymnasium as gym
 
+from . import agents
+
 ##
 # Register Gym environments.
 ##
-# NOTE: `rsl_rl_cfg_entry_point` is intentionally absent until the AME
-# actor-critic lands — the env is loadable and viewable now (zero_agent,
-# render_check), it just cannot be trained yet.
 
 gym.register(
     id="Volcaniarm-Reach-Vision-AME-v0",
@@ -18,6 +17,7 @@ gym.register(
         "env_cfg_entry_point": (
             f"{__name__}.reach_vision_ame_env_cfg:VolcaniarmReachVisionAmeEnvCfg"
         ),
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:PPORunnerCfg",
     },
 )
 
@@ -29,5 +29,6 @@ gym.register(
         "env_cfg_entry_point": (
             f"{__name__}.reach_vision_ame_env_cfg:VolcaniarmReachVisionAmeEnvCfg_PLAY"
         ),
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:PPORunnerCfg",
     },
 )
