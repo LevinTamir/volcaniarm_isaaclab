@@ -53,6 +53,21 @@ DESK_TOP_COLOR = Gf.Vec3f(0.55, 0.40, 0.25)  # lighter wood
 POT_COLOR = Gf.Vec3f(0.55, 0.30, 0.18)       # terracotta
 POT_RIM_COLOR = Gf.Vec3f(0.60, 0.35, 0.22)   # slightly lighter rim
 
+# Black non-reflective rubber mat under the rig. The concrete floor is kept:
+# in the real lab the mat covers only part of the view and light concrete is
+# visible past its edge, which is what the photo shows.
+MAT_COLOR = Gf.Vec3f(0.04, 0.04, 0.04)
+MAT_SIZE = (2.4, 1.8)        # X, Y extent in metres — tune to the real mat
+MAT_THICKNESS = 0.006
+MAT_CENTER = (0.0, 0.0)
+
+# The 3D-printed weed, built by scripts/convert_weed.py. Origin is at the
+# canopy apex, so translate by +height to seat the base on the mat.
+WEED_USD = PROJECT / "assets/usd/fake_weed.usd"
+WEED_HEIGHT = 0.20
+WEED_COLOR = Gf.Vec3f(0.24, 0.75, 0.51)
+WEED_XY = (0.071, 0.10)      # on the mat, inside the arm's reachable Y span
+
 # NVIDIA Omniverse sample-asset S3 root (Isaac Sim 5.1 bundle). Kit resolves
 # http(s) asset URLs and caches them locally on first load, so referencing
 # by URL keeps the scene self-contained in git while giving us real meshes.
@@ -213,6 +228,69 @@ def _add_desk(overlay):
         )
 
 
+def _add_floor_mat(overlay):
+    """Black rubber mat laid on the concrete, directly under the rig.
+
+    Sits 1 mm proud of the floor so there is no z-fighting between the two
+    coplanar boxes.
+    """
+    mx, my = MAT_CENTER
+    _add_box(
+        overlay, f"{LAB_PATH}/FloorMat",
+        scale=(MAT_SIZE[0], MAT_SIZE[1], MAT_THICKNESS),
+        translate=(mx, my, FLOOR_Z_TOP + MAT_THICKNESS / 2.0),
+        color=MAT_COLOR,
+    )
+    return FLOOR_Z_TOP + MAT_THICKNESS
+
+
+def _add_weed(overlay, mat_top_z):
+    """The 3D-printed weed standing on the mat.
+
+    Replaces the decorative Japanese Painted Fern that used to stand in for a
+    plant here. Two reasons: the real lab has no fern, and — more importantly
+    — the vision policy segments on *green*, so a second green object in frame
+    is exactly the failure mode the blob isolation exists to handle. Leaving a
+    large decorative fern in the world would give the ROS2/IsaacSim deploy
+    tests a competing blob that reality doesn't have.
+
+    The USD origin is the canopy apex (see scripts/convert_weed.py), so
+    translating to `mat_top_z + WEED_HEIGHT` puts the base on the mat.
+    """
+    if not WEED_USD.exists():
+        raise FileNotFoundError(
+            f"Run scripts/convert_weed.py first — missing {WEED_USD}"
+        )
+    x, y = WEED_XY
+    weed = overlay.DefinePrim(f"{LAB_PATH}/Weed", "Xform")
+    weed.GetReferences().AddReference(str(WEED_USD))
+    xf = UsdGeom.Xformable(weed)
+    xf.AddTranslateOp(opSuffix="place").Set(
+        Gf.Vec3d(x, y, mat_top_z + WEED_HEIGHT)
+    )
+
+    # Bind the green material here rather than baking it into the asset, so
+    # the colour stays in one place alongside the training-side WEED_COLOR.
+    _bind_color(overlay, weed, WEED_COLOR, f"{LAB_PATH}/Looks/WeedGreen")
+
+
+def _bind_color(overlay, prim, color, mat_path):
+    """Author a PreviewSurface material and bind it to `prim`."""
+    from pxr import Sdf, UsdShade
+
+    material = UsdShade.Material.Define(overlay, mat_path)
+    shader = UsdShade.Shader.Define(overlay, f"{mat_path}/Shader")
+    shader.CreateIdAttr("UsdPreviewSurface")
+    shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(color)
+    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.6)
+    shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.0)
+    material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
+    UsdShade.MaterialBindingAPI.Apply(prim)
+    UsdShade.MaterialBindingAPI(prim).Bind(
+        material, bindingStrength=UsdShade.Tokens.strongerThanDescendants
+    )
+
+
 def _add_potted_plant(overlay):
     # XY pose matches Gazebo lab.sdf weed_target (-0.12, 0.25) — the two sims
     # share a visual reference. Terracotta pot as primitives; foliage is a
@@ -324,9 +402,11 @@ def main() -> None:
     UsdGeom.Xform.Define(overlay, LAB_PATH)
 
     ceiling_center_z = _add_room_shell(overlay)
+    mat_top_z = _add_floor_mat(overlay)
     _add_workbench(overlay)
     _add_desk(overlay)
-    _add_potted_plant(overlay)
+    # The decorative fern is deliberately not built any more — see _add_weed.
+    _add_weed(overlay, mat_top_z)
     _add_ceiling_light(overlay, ceiling_center_z)
     _add_named_view_camera(overlay)
     _seed_viewport_pose(overlay)
