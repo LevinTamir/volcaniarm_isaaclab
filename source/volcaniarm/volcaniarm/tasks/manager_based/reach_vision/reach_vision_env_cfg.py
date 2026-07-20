@@ -4,15 +4,15 @@
 """Vision reach task for the volcaniarm 5-bar planar 2-DOF arm.
 
 Differs from `reach`:
-- A green-cylinder plant surrogate is spawned per env at a random
+- A green-cylinder weed surrogate is spawned per env at a random
   (Y, Z) inside the existing reachable workspace (X is fixed by the
   planar mechanism).
 - A downward-looking TiledCamera mounted on `volcaniarm_base_link`
   produces RGB at the training resolution.
 - Asymmetric observations: actor sees ResNet18 features + joint_pos_rel
-  + last_action; critic adds the privileged plant position in base
+  + last_action; critic adds the privileged weed position in base
   frame.
-- Reward is Y-Z distance from `left_ee_link` to the plant root_pos_w
+- Reward is Y-Z distance from `left_ee_link` to the weed root_pos_w
   (X error ignored — planar mechanism cannot control X).
 - Floor uses concrete-grey colour matching `scripts/build_lab.py`
   FLOOR_COLOR (0.72, 0.70, 0.68) so the visual gap to the real lab
@@ -42,9 +42,9 @@ from . import mdp
 
 # Workspace bounds in `volcaniarm_base_link` frame (base sits at world
 # z=0.98). Identical to the validated state-based task ranges.
-PLANT_X_BASE = 0.071
-PLANT_Y_RANGE = (-0.50, 0.50)
-PLANT_Z_RANGE = (-0.98, -0.78)
+WEED_X_BASE = 0.071
+WEED_Y_RANGE = (-0.50, 0.50)
+WEED_Z_RANGE = (-0.98, -0.78)
 
 # Image resolution — small enough that 512+ envs fit on one GPU,
 # large enough for ResNet18 ImageNet weights to be in distribution
@@ -113,7 +113,7 @@ CAMERA_OFFSET_QUAT = _quat_from_rpy(CAMERA_OFFSET_RPY)
 
 @configclass
 class VolcaniarmReachVisionSceneCfg(InteractiveSceneCfg):
-    """Scene: concrete-grey ground, dome light, robot, plant, camera."""
+    """Scene: concrete-grey ground, dome light, robot, weed, camera."""
 
     # Concrete-grey floor. `GroundPlaneCfg` and `TerrainImporterCfg`
     # both spawn the default Isaac grid USD (whose base texture is
@@ -153,11 +153,11 @@ class VolcaniarmReachVisionSceneCfg(InteractiveSceneCfg):
         init_state=AssetBaseCfg.InitialStateCfg(rot=(0.7071, 0.7071, 0.0, 0.0)),
     )
 
-    # Plant surrogate: green cylinder. Disabled gravity so it stays
+    # Weed surrogate: green cylinder. Disabled gravity so it stays
     # exactly where reset_root_state_uniform places it — we don't
-    # care about plant dynamics, only its position as a target.
-    plant = RigidObjectCfg(
-        prim_path="{ENV_REGEX_NS}/Plant",
+    # care about weed dynamics, only its position as a target.
+    weed = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/Weed",
         spawn=sim_utils.CylinderCfg(
             radius=0.025,
             height=0.10,
@@ -166,9 +166,9 @@ class VolcaniarmReachVisionSceneCfg(InteractiveSceneCfg):
             mass_props=sim_utils.MassPropertiesCfg(mass=0.05),
             collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
         ),
-        # Init pose is overwritten on every reset by `randomize_plant_pose`.
+        # Init pose is overwritten on every reset by `randomize_weed_pose`.
         # World z below: workspace centre = 0.98 + (-0.88) = 0.10.
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(PLANT_X_BASE, 0.0, 0.10)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(WEED_X_BASE, 0.0, 0.10)),
     )
 
     # Camera placement is driven by the CAMERA_* constants at the top
@@ -214,7 +214,7 @@ class ActionsCfg:
 
 @configclass
 class ObservationsCfg:
-    """Asymmetric obs: actor=features+proprio, critic adds plant pose.
+    """Asymmetric obs: actor=features+proprio, critic adds weed pose.
 
     rsl_rl's ActorCritic concatenates all groups inside the "policy"
     and "critic" lists; both must be flat 1D per-term so the MLP can
@@ -267,7 +267,7 @@ class ObservationsCfg:
                 "model_name": "resnet18",
             },
         )
-        plant_pos_b = ObsTerm(func=mdp.plant_pos_in_base)
+        weed_pos_b = ObsTerm(func=mdp.weed_pos_in_base)
 
         def __post_init__(self):
             self.enable_corruption = False
@@ -279,7 +279,7 @@ class ObservationsCfg:
 
 @configclass
 class EventCfg:
-    """Reset + interval events: joint reset, plant pose, lighting, colour, camera DR."""
+    """Reset + interval events: joint reset, weed pose, lighting, colour, camera DR."""
 
     reset_robot_joints = EventTerm(
         func=mdp.reset_joints_by_offset,
@@ -293,36 +293,36 @@ class EventCfg:
         },
     )
 
-    # Plant: random (Y, Z) inside the workspace; X pinned at the
+    # Weed: random (Y, Z) inside the workspace; X pinned at the
     # planar-arm reachable plane. Pose is in WORLD frame, so add the
     # base-link world z (0.98) to the base-frame Z range.
-    randomize_plant_pose = EventTerm(
+    randomize_weed_pose = EventTerm(
         func=mdp.reset_root_state_uniform,
         mode="reset",
         params={
-            "asset_cfg": SceneEntityCfg("plant"),
+            "asset_cfg": SceneEntityCfg("weed"),
             "pose_range": {
-                "x": (PLANT_X_BASE, PLANT_X_BASE),
-                "y": PLANT_Y_RANGE,
-                "z": (0.98 + PLANT_Z_RANGE[0], 0.98 + PLANT_Z_RANGE[1]),
+                "x": (WEED_X_BASE, WEED_X_BASE),
+                "y": WEED_Y_RANGE,
+                "z": (0.98 + WEED_Z_RANGE[0], 0.98 + WEED_Z_RANGE[1]),
             },
             "velocity_range": {},
         },
     )
 
-    # Mid-episode plant resample — gives ~3 reach attempts per 12 s episode
+    # Mid-episode weed resample — gives ~3 reach attempts per 12 s episode
     # instead of 1, tripling the on-policy reaching signal per env per iter.
-    resample_plant_pose = EventTerm(
+    resample_weed_pose = EventTerm(
         func=mdp.reset_root_state_uniform,
         mode="interval",
         interval_range_s=(4.0, 4.0),
         is_global_time=False,
         params={
-            "asset_cfg": SceneEntityCfg("plant"),
+            "asset_cfg": SceneEntityCfg("weed"),
             "pose_range": {
-                "x": (PLANT_X_BASE, PLANT_X_BASE),
-                "y": PLANT_Y_RANGE,
-                "z": (0.98 + PLANT_Z_RANGE[0], 0.98 + PLANT_Z_RANGE[1]),
+                "x": (WEED_X_BASE, WEED_X_BASE),
+                "y": WEED_Y_RANGE,
+                "z": (0.98 + WEED_Z_RANGE[0], 0.98 + WEED_Z_RANGE[1]),
             },
             "velocity_range": {},
         },
@@ -382,23 +382,23 @@ class EventCfg:
 
 @configclass
 class RewardsCfg:
-    """Apr-22-style stack adapted to plant Y-Z tracking (X ignored)."""
+    """Apr-22-style stack adapted to weed Y-Z tracking (X ignored)."""
 
-    plant_position_tracking = RewTerm(
-        func=mdp.position_plant_error,
+    weed_position_tracking = RewTerm(
+        func=mdp.position_weed_error,
         weight=-0.2,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"])},
     )
-    plant_position_tracking_tanh_broad = RewTerm(
-        func=mdp.position_plant_error_tanh,
+    weed_position_tracking_tanh_broad = RewTerm(
+        func=mdp.position_weed_error_tanh,
         weight=1.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"]),
             "std": 0.3,
         },
     )
-    plant_position_tracking_tanh_fine = RewTerm(
-        func=mdp.position_plant_error_tanh,
+    weed_position_tracking_tanh_fine = RewTerm(
+        func=mdp.position_weed_error_tanh,
         weight=3.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"]),

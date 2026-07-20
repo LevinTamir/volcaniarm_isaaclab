@@ -5,7 +5,7 @@
 
 Spawns a few envs of the requested task, resets once, lets the camera
 render a couple of frames, then dumps the RGB output as PNG so the
-camera offset / FOV / plant visibility can be verified before training.
+camera offset / FOV / weed visibility can be verified before training.
 
 Usage:
     isaaclab.sh -p source/volcaniarm/scripts/render_check.py \\

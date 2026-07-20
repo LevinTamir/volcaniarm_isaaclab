@@ -7,7 +7,7 @@ Note: rsl_rl's stock ActorCritic only accepts 1D obs and ships only
 MLPs. We compensate by extracting features upstream — see
 `mdp.image_features` with model_name="resnet18". The policy is then a
 plain MLP over [features, joint_pos_rel, last_action]; the critic gets
-the same plus the privileged plant pose. If frozen ResNet features
+the same plus the privileged weed pose. If frozen ResNet features
 turn out too coarse, the fallback is a custom CNN ActorCritic class
 registered via `class_name`.
 """

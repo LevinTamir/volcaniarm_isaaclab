@@ -6,8 +6,8 @@ Writes:  assets/usd/volcaniarm_vision_test.usd
 Adds a single green cylinder under the arm at the same pose used by
 the Gazebo `vision_test.sdf` world, so the deployed RL vision
 controller sees the same target across both simulators. Geometry
-mirrors the training plant surrogate
-(`reach_vision_env_cfg.py:plant`): radius 0.025 m, height 0.10 m,
+mirrors the training weed surrogate
+(`reach_vision_env_cfg.py:weed`): radius 0.025 m, height 0.10 m,
 diffuse colour (0.15, 0.55, 0.15).
 
 Pure visual overlay: no physics APIs, no graph edits. Open in Isaac

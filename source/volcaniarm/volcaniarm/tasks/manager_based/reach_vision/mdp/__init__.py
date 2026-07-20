@@ -4,8 +4,8 @@
 """MDP terms for the vision reach task.
 
 Re-exports the IsaacLab stdlib mdp + the shared joint-range penalty
-from the state-based reach task; adds plant-pose-based tracking rewards
-and a privileged plant-pose observation.
+from the state-based reach task; adds weed-pose-based tracking rewards
+and a privileged weed-pose observation.
 """
 
 from isaaclab.envs.mdp import *  # noqa: F401, F403
@@ -17,7 +17,7 @@ from .events import (  # noqa: F401
     randomize_visual_color_global,
 )
 from .rewards import (  # noqa: F401
-    plant_pos_in_base,
-    position_plant_error,
-    position_plant_error_tanh,
+    weed_pos_in_base,
+    position_weed_error,
+    position_weed_error_tanh,
 )

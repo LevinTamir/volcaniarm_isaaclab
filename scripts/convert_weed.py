@@ -1,18 +1,20 @@
-"""Convert the 3D-printed fake-plant STLs into USD props for Isaac Lab.
+"""Convert the 3D-printed fake-weed STL into a USD prop for Isaac Lab.
 
 Produces:
-    assets/usd/fake_plant_small.usd    (~7.3 cm tall)
-    assets/usd/fake_plant_medium.usd   (~14.3 cm tall)
+    assets/usd/fake_weed.usd     (20 cm tall, origin at the canopy apex)
 
-The source STLs are ~386k triangles / 19 MB each — unusable as-is when
-instanced across 512 training envs, and far too heavy to commit. The vision
-policy only ever sees the plant's green *silhouette* (see the HSV mask in
-`reach_vision_ame/mdp/green_mask.py`), so fine leaf detail carries no signal.
-We decimate hard and keep the outline.
+Source is `assets/STLs/fake_weed.stl` — the small print, authored in
+millimetres at 73.35 mm tall. Only one STL is tracked: the "medium" variant
+upstream is the identical mesh at exactly 2x, so any size is reachable by
+scaling this one.
+
+The source is ~386k triangles. The vision policy only ever sees the weed's
+green *silhouette* (see `reach_vision_ame/mdp/green_mask.py`), so fine leaf
+detail carries no signal and we decimate hard.
 
 Run with:
     conda activate isaaclab_env
-    ~/isaac/IsaacLab/isaaclab.sh -p scripts/convert_plant.py
+    ~/isaac/IsaacLab/isaaclab.sh -p scripts/convert_weed.py
 """
 
 from isaaclab.app import AppLauncher
@@ -29,15 +31,21 @@ from isaaclab.sim.converters import MeshConverter, MeshConverterCfg
 
 PROJECT = Path(__file__).resolve().parent.parent
 USD_DIR = PROJECT / "assets/usd"
+STL_DIR = PROJECT / "assets/STLs"
 BUILD_DIR = USD_DIR / "_build"
 
-# Source STLs. Authored in millimetres; `meduim` typo is upstream.
+# Source STL and the real-world height to scale it to.
+#
+# Why 20 cm and not the authored 7.3 cm: `scripts/check_workspace.py` shows the
+# EE bottoms out at z=0.052 m — the arm physically cannot reach the mat, at any
+# joint angle. So the reach target has to be the weed's canopy, and the
+# reachable Y span depends strongly on how high that canopy sits:
+#     canopy 0.075 m -> Y span 0.20 m      canopy 0.20 m -> Y span 0.58 m
+#     canopy 0.14  m -> Y span 0.38 m      canopy >0.30 m -> unreachable
+# 20 cm puts the canopy in the widest part of the envelope.
 SOURCES = {
-    "fake_plant_small": Path.home() / "Downloads/small_size_fake_plant_with_magnets.STL",
-    "fake_plant_medium": Path.home() / "Downloads/meduim_size_fake_plant_with_magnets.STL",
+    "fake_weed": (STL_DIR / "fake_weed.stl", 0.20),
 }
-
-MM_TO_M = 0.001
 
 # The USD is geometry only — the green material is bound at spawn time via
 # `UsdFileCfg(visual_material=...)` in `reach_vision_ame_env_cfg.py`, which
@@ -53,11 +61,6 @@ MM_TO_M = 0.001
 # erodes the thin leaves and shrinks the silhouette ~12%, which would bias
 # the apparent blob size the policy trains on.
 TARGET_FACES = 15000
-
-# Matches the real 3D print. Re-measure from a RealSense frame and update
-# alongside GREEN_NOMINAL in reach_vision_ame/contract.py — the mask
-# thresholds and this colour have to describe the same object.
-PLANT_COLOR = (0.10, 0.62, 0.38)
 
 
 def decimate_vertex_clustering(mesh: trimesh.Trimesh, target_faces: int) -> trimesh.Trimesh:
@@ -87,7 +90,11 @@ def decimate_vertex_clustering(mesh: trimesh.Trimesh, target_faces: int) -> trim
 
         faces = inverse[mesh.faces]
         # Drop faces that collapsed to a line or a point.
-        keep = (faces[:, 0] != faces[:, 1]) & (faces[:, 1] != faces[:, 2]) & (faces[:, 0] != faces[:, 2])
+        keep = (
+            (faces[:, 0] != faces[:, 1])
+            & (faces[:, 1] != faces[:, 2])
+            & (faces[:, 0] != faces[:, 2])
+        )
         out = trimesh.Trimesh(vertices=verts, faces=faces[keep], process=True)
         out.remove_unreferenced_vertices()
         return out
@@ -109,23 +116,35 @@ def decimate_vertex_clustering(mesh: trimesh.Trimesh, target_faces: int) -> trim
     return best
 
 
-def prepare_mesh(src: Path) -> tuple[trimesh.Trimesh, dict]:
-    """Load, decimate, scale to metres, and seat the mesh on z=0.
+def prepare_mesh(src: Path, target_height_m: float) -> tuple[trimesh.Trimesh, dict]:
+    """Load, decimate, scale to `target_height_m`, and put the origin at the apex.
 
-    The STLs sit in the positive octant with `bbox min == [0,0,0]` — the
-    origin is a corner, not the centroid. Left alone the plant would hover
-    off to one side of its spawn point, so we recentre in X/Y and drop the
-    base to z=0 so it rests *on* the mat.
+    Two placement details matter:
+
+    1. The STL sits in the positive octant with `bbox min == [0,0,0]` — the
+       origin is a corner, not the centroid — so we recentre in X/Y.
+
+    2. The origin goes at the mesh **apex**, not its base. The arm cannot
+       reach the mat (EE floor is z=0.052 m), so the reach target is the
+       weed's canopy. Putting the origin there means the prim's root pose *is*
+       the target: spawning at z=height seats the base on the mat at z=0 while
+       `position_weed_error` / `weed_pos_in_base` keep working against
+       root_pos_w unchanged, with no reward-side offset to keep in sync.
+       The trade-off is that this couples the asset to its spawn height — any
+       spawn-time rescale must adjust spawn z by the same factor or the base
+       leaves the mat.
     """
     mesh = trimesh.load(src, force="mesh")
     before = len(mesh.faces)
 
     mesh = decimate_vertex_clustering(mesh, TARGET_FACES)
-    mesh.apply_scale(MM_TO_M)
+
+    lo, hi = mesh.bounds
+    mesh.apply_scale(target_height_m / float(hi[2] - lo[2]))
 
     lo, hi = mesh.bounds
     centre_xy = 0.5 * (lo + hi)
-    mesh.apply_translation((-centre_xy[0], -centre_xy[1], -lo[2]))
+    mesh.apply_translation((-centre_xy[0], -centre_xy[1], -hi[2]))
 
     lo, hi = mesh.bounds
     stats = {
@@ -133,6 +152,7 @@ def prepare_mesh(src: Path) -> tuple[trimesh.Trimesh, dict]:
         "faces_after": len(mesh.faces),
         "height_m": float(hi[2] - lo[2]),
         "footprint_m": (float(hi[0] - lo[0]), float(hi[1] - lo[1])),
+        "apex_z": float(hi[2]),
         "base_z": float(lo[2]),
     }
     return mesh, stats
@@ -141,11 +161,11 @@ def prepare_mesh(src: Path) -> tuple[trimesh.Trimesh, dict]:
 def main() -> None:
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
 
-    for name, src in SOURCES.items():
+    for name, (src, target_h) in SOURCES.items():
         if not src.exists():
             raise FileNotFoundError(f"missing source STL: {src}")
 
-        mesh, stats = prepare_mesh(src)
+        mesh, stats = prepare_mesh(src, target_h)
         obj_path = BUILD_DIR / f"{name}.obj"
         mesh.export(obj_path)
 
@@ -155,13 +175,11 @@ def main() -> None:
             usd_file_name=f"{name}.usd",
             force_usd_conversion=True,
             # MUST stay False. `make_instanceable=True` pushes geometry into a
-            # *shared* `<usd_dir>/Props/instanceable_meshes.usd`, which is the
-            # same file `convert_urdf.py` writes for the robot — so an
-            # instanceable plant conversion silently overwrites the robot's
-            # meshes (and the two plants clobber each other). At 15k faces the
-            # geometry is ~130 KB inline; env cloning still instances it.
+            # *shared* `<usd_dir>/Props/instanceable_meshes.usd`, so repeated
+            # conversions silently overwrite each other's meshes. At 15k faces
+            # the geometry is ~130 KB inline; env cloning still instances it.
             make_instanceable=False,
-            # Visual-only prop: the plant is a reach *target*, never touched.
+            # Visual-only prop: the weed is a reach *target*, never touched.
             # No mass/rigid/collision props keeps it cheap and stops it being
             # knocked around mid-episode.
             collision_props=None,
@@ -174,7 +192,7 @@ def main() -> None:
             f"{name}: {stats['faces_before']} -> {stats['faces_after']} faces, "
             f"height {stats['height_m'] * 100:.1f} cm, "
             f"footprint {stats['footprint_m'][0] * 100:.1f}x{stats['footprint_m'][1] * 100:.1f} cm, "
-            f"base_z {stats['base_z']:.4f}"
+            f"apex_z {stats['apex_z']:.4f} (origin), base_z {stats['base_z']:.4f}"
         )
         print(f"  -> {USD_DIR / (name + '.usd')}")
 
