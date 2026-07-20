@@ -193,8 +193,22 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # export policy to onnx/jit
     export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
-    export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
-    export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
+    if type(policy_nn).__name__ == "ActorCriticAME":
+        # The stock exporters copy `policy.actor` and wrap it as
+        # actor(normalizer(x)). For AME that is ONLY the final MLP — the CNN
+        # and the attention layer are silently dropped, and the result expects
+        # a 68-D vector that nothing produces. It would export without error
+        # and look deployable, which is worse than failing.
+        # The real artifact comes from export_onnx_bundle.py.
+        print(
+            "[play] skipping stock jit/onnx export for ActorCriticAME — it would\n"
+            "       drop the CNN+attention encoder. Use instead:\n"
+            "         isaaclab.sh -p source/volcaniarm/scripts/rsl_rl/export_onnx_bundle.py \\\n"
+            f"           --task {args_cli.task} --num_envs 2 --headless --enable_cameras"
+        )
+    else:
+        export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
+        export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
 
     dt = env.unwrapped.step_dt
 
