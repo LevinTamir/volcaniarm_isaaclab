@@ -64,18 +64,23 @@ POT_RIM_COLOR = Gf.Vec3f(0.60, 0.35, 0.22)   # slightly lighter rim
 # visible past its edge, which is what the photo shows.
 MAT_COLOR = Gf.Vec3f(0.04, 0.04, 0.04)
 MAT_ROUGHNESS = 0.95         # matte rubber — see _add_floor_mat
-MAT_SIZE = (2.0, 1.6)        # X, Y extent in metres — tune to the real mat
+# Measured: 0.9 m deep (X, robot's forward axis) x 2.0 m wide (Y, the arm's
+# sweep direction). Centred on the robot, so it stops just shy of the back
+# wall at x=-0.5.
+MAT_SIZE = (0.9, 2.0)
 MAT_THICKNESS = 0.006
-MAT_CENTER = (0.35, 0.0)     # shifted forward: the back wall is only 0.5 m away
+MAT_CENTER = (0.0, 0.0)
 
 # The 3D-printed weed, built by scripts/convert_weed.py. Origin is at the
 # canopy apex, so translate by +height to seat the base on the mat.
 WEED_USD = PROJECT / "assets/usd/fake_weed.usd"
 WEED_USD_HEIGHT = 0.20       # height baked into the asset by convert_weed.py
-# Real printed part: the small STL at its authored scale. This world is a
-# visual reference, so it matches the physical object rather than the
-# training task, which uses a taller weed for reachability reasons.
-WEED_HEIGHT = 0.073
+# The weed currently on the bench, measured. This world is a visual reference
+# of the *present* setup, so it deliberately differs from the training task,
+# which uses a 20 cm weed: at 7 cm the canopy clears the arm's 5.2 cm EE floor
+# by only ~2 cm and the reachable Y span collapses to ~+-0.07 m. Reprint at
+# 20 cm (scale the STL 2.73x) and set this to 0.20 to make the two agree.
+WEED_HEIGHT = 0.07
 WEED_COLOR = Gf.Vec3f(0.24, 0.75, 0.51)
 WEED_XY = (0.071, 0.10)      # on the mat, inside the arm's reachable Y span
 
