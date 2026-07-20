@@ -276,6 +276,20 @@ def _add_desk(overlay):
         )
 
 
+def _usd_height(usd_path):
+    """Z extent of a USD asset's geometry, in metres.
+
+    Opened on a throwaway stage so this never disturbs the overlay being
+    authored.
+    """
+    stage = Usd.Stage.Open(str(usd_path))
+    if stage is None:
+        raise FileNotFoundError(f"cannot open {usd_path}")
+    cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ["default", "render"])
+    rng = cache.ComputeWorldBound(stage.GetPseudoRoot()).ComputeAlignedRange()
+    return float(rng.GetMax()[2] - rng.GetMin()[2])
+
+
 def _add_floor_mat(overlay):
     """Black rubber mat laid on the concrete, directly under the rig.
 
@@ -320,10 +334,19 @@ def _add_weed(overlay, mat_top_z):
             f"Run scripts/convert_weed.py first — missing {WEED_USD}"
         )
     x, y = WEED_XY
-    # The asset is baked at WEED_USD_HEIGHT with its origin at the apex, so a
-    # rescale has to move the translate by the same factor or the base lifts
-    # off the mat.
-    scale = WEED_HEIGHT / WEED_USD_HEIGHT
+    # Measure the asset's real height instead of trusting a hand-copied
+    # constant. These two drifted once already: build_lab baked
+    # scale = 0.07/0.20 = 0.35, then convert_weed.py was re-run at 0.115 m, so
+    # the lab world silently rendered a 4 cm weed floating 3 cm off the mat —
+    # and the deployed policy saw a target ~8x too small in pixel area. Reading
+    # the source of truth makes that impossible.
+    asset_h = _usd_height(WEED_USD)
+    if abs(asset_h - WEED_USD_HEIGHT) > 1e-4:
+        print(
+            f"[build_lab] note: {WEED_USD.name} is {asset_h:.4f} m tall, "
+            f"WEED_USD_HEIGHT says {WEED_USD_HEIGHT:.4f} — using the measured value"
+        )
+    scale = WEED_HEIGHT / asset_h
     weed = overlay.DefinePrim(f"{LAB_PATH}/Weed", "Xform")
     weed.GetReferences().AddReference(str(WEED_USD))
     xf = UsdGeom.Xformable(weed)
