@@ -89,13 +89,11 @@ MAT_CENTER = (0.0, 0.0)
 # The 3D-printed weed, built by scripts/convert_weed.py. Origin is at the
 # canopy apex, so translate by +height to seat the base on the mat.
 WEED_USD = PROJECT / "assets/usd/fake_weed.usd"
-WEED_USD_HEIGHT = 0.20       # height baked into the asset by convert_weed.py
-# The weed currently on the bench, measured. This world is a visual reference
-# of the *present* setup, so it deliberately differs from the training task,
-# which uses a 20 cm weed: at 7 cm the canopy clears the arm's 5.2 cm EE floor
-# by only ~2 cm and the reachable Y span collapses to ~+-0.07 m. Reprint at
-# 20 cm (scale the STL 2.73x) and set this to 0.20 to make the two agree.
-WEED_HEIGHT = 0.07
+WEED_USD_HEIGHT = 0.115      # height baked into the asset by convert_weed.py
+# Matches the training task (contract.WEED_HEIGHT_M) so the visual reference
+# and the trained-against weed are the same object. Print the STL at ~1.57x
+# its authored 73.35 mm to match.
+WEED_HEIGHT = 0.115
 WEED_COLOR = Gf.Vec3f(0.24, 0.75, 0.51)
 WEED_XY = (0.071, 0.10)      # on the mat, inside the arm's reachable Y span
 

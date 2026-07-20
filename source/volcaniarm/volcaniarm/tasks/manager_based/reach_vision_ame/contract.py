@@ -17,10 +17,19 @@ anywhere. One definition kills that whole failure mode.
 # controller resizes incoming frames to exactly this before inference.
 CAM_H, CAM_W = 96, 96
 
-# Mask resolution fed to the CNN. We threshold at full camera res and
-# average-pool down by 2, which gives anti-aliased sub-pixel coverage;
-# thresholding an already-downsampled image would alias the small target.
-MASK_H, MASK_W = 48, 48
+# Deployment-facing mask math and its thresholds live in `mask_ops`, which
+# imports torch and nothing else so it can run against real camera frames
+# without launching Isaac. Re-exported here so consumers keep treating this
+# module as the single source of truth.
+from .mask_ops import (  # noqa: F401,E402
+    GREEN_NOMINAL,
+    LCC_ITERS,
+    LCC_KERNEL,
+    MASK_H,
+    MASK_W,
+    isolate_blob,
+    rgb_to_green_mask,
+)
 
 # Name of the observation group carrying the flattened mask.
 MASK_GROUP = "mask"
@@ -30,51 +39,6 @@ MASK_GROUP = "mask"
 # inputs in this order. The exporter asserts the two agree.
 PROPRIO_TERMS = ("joint_pos", "actions")
 PROPRIO_DIM = 4
-
-# Iterations of seeded morphological reconstruction used to isolate a single
-# green blob. Propagation is (kernel-1)/2 px per step, so with a 7x7 kernel
-# at 48x48 we need ~ceil(48*sqrt(2)/3) = 23 to cover the full diagonal.
-LCC_ITERS = 24
-LCC_KERNEL = 7
-
-# ---------------------------------------------------------------------
-# Green segmentation thresholds (normalised HSV, all in [0,1])
-# ---------------------------------------------------------------------
-# Starting point: the field-validated OpenCV values already deployed in
-# volcaniarm_ws/src/volcaniarm_weed_detector/.../weed_detection_node.py:64-66
-#   lower=[35,60,60]  upper=[85,255,255]   (OpenCV H is 0..179)
-# -> hue 35..85 of 180 = 0.194..0.472, centre 0.333, halfwidth 0.139
-#
-# That band was calibrated for *real* foliage. The current target is a
-# 3D-printed plastic weed whose green is visibly cyan-shifted — estimated
-# at H~76 (0.42 normalised) from the lab photo, close to the band's upper
-# edge. We therefore widen and re-centre to cover both the plastic print and
-# natural green, rather than sitting on the edge.
-#
-# TODO(calibration): replace with the median HSV measured over weed pixels
-# in a real RealSense frame. The photo estimate is a phone image with unknown
-# white balance and is not authoritative. See verification step 4 in the plan.
-# Calibrated against the ACTUAL rendered frame, not the material constant —
-# lighting and tonemapping shift the weed's colour in the image. Measured over
-# green-dominant pixels in the AME scene:
-#     hue  p05=0.4222  median=0.4383  p95=0.4431   (OpenCV H ~79)
-#     sat  p05=0.3152  median=0.4576  p95=0.4878
-#     val  p05=0.2157  median=0.6235  p95=0.7176
-# The previous values (centre 0.375, sat/val floors 0.2353) capped the mask at
-# 0.81: the hue was 0.06 off-centre, and val_min sat *above* the 5th percentile
-# so shadowed weed pixels were cut entirely.
-#
-# The floors are safe to lower because saturation, not value, is what
-# discriminates against the black mat — the mat is ~(0.04,0.04,0.04), i.e.
-# effectively zero saturation, so it can never enter the band however dim the
-# value gate gets.
-GREEN_NOMINAL = dict(
-    hue_center=0.435,      # OpenCV H ~78
-    hue_halfwidth=0.120,   # covers H ~57..100; still admits natural green at 60
-    sat_min=0.18,
-    val_min=0.12,
-    softness=0.04,         # sigmoid width; ~7 OpenCV-hue units of soft edge
-)
 
 # Per-env jitter half-ranges, resampled on reset. Sim only — the export bakes
 # GREEN_NOMINAL. This is what makes the policy robust to the nominal being
@@ -103,8 +67,9 @@ MAT_ROUGHNESS = 0.9
 # the mat. Spawning at world z = WEED_HEIGHT_M therefore seats the base at
 # z=0 while `position_weed_error` / `weed_pos_in_base` keep working against
 # root_pos_w with no offset term to maintain.
-# 1.5x the authored STL height. Must match the target in convert_weed.py.
-WEED_HEIGHT_M = 0.11
+# ~1.57x the authored STL height. Must match the target in convert_weed.py
+# and WEED_HEIGHT in scripts/build_lab.py.
+WEED_HEIGHT_M = 0.115
 WEED_SPAWN_Z_WORLD = WEED_HEIGHT_M
 
 # X is pinned: the 5-bar is planar and the EE only ever reaches x=0.071.

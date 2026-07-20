@@ -1,7 +1,7 @@
 """Convert the 3D-printed fake-weed STL into a USD prop for Isaac Lab.
 
 Produces:
-    assets/usd/fake_weed.usd     (20 cm tall, origin at the canopy apex)
+    assets/usd/fake_weed.usd     (11.5 cm tall, origin at the canopy apex)
 
 Source is `assets/STLs/fake_weed.stl` — the small print, authored in
 millimetres at 73.35 mm tall. Only one STL is tracked: the "medium" variant
@@ -37,16 +37,16 @@ BUILD_DIR = USD_DIR / "_build"
 
 # Source STL and the real-world height to scale it to.
 #
-# 0.11 m is 1.5x the authored 73.35 mm — a print you can actually make, while
-# staying reachable. `scripts/check_workspace.py` shows the EE bottoms out at
-# z=0.052 m: the arm physically cannot reach the mat at any joint angle, so
-# the reach target is the weed's *canopy*, and the reachable Y span depends
+# 0.115 m is ~1.57x the authored 73.35 mm — a print you can actually make,
+# while staying reachable. `scripts/check_workspace.py` shows the EE bottoms
+# out at z=0.052 m: the arm physically cannot reach the mat at any joint angle,
+# so the reach target is the weed's *canopy*, and the reachable Y span depends
 # strongly on how high that canopy sits (elbows within the reward's +-75 deg):
 #     canopy 0.075 m -> Y span 0.20 m      canopy 0.20 m -> Y span 0.58 m
-#     canopy 0.11  m -> Y span 0.25 m      canopy >0.30 m -> unreachable
-# At 0.11 m the canopy clears the EE floor by ~6 cm and Y spans ~+-0.10.
+#     canopy 0.115 m -> Y span 0.25 m      canopy >0.30 m -> unreachable
+# At 0.115 m the canopy clears the EE floor by ~6 cm and Y spans ~+-0.10.
 SOURCES = {
-    "fake_weed": (STL_DIR / "fake_weed.stl", 0.11),
+    "fake_weed": (STL_DIR / "fake_weed.stl", 0.115),
 }
 
 # The USD is geometry only — the green material is bound at spawn time via
