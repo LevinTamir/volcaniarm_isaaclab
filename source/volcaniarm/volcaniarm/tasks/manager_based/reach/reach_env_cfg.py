@@ -221,7 +221,7 @@ class VolcaniarmReachEnvCfg(ManagerBasedRLEnvCfg):
     def __post_init__(self):
         self.decimation = 2
         self.episode_length_s = 12.0
-        self.viewer.eye = (15.0, 15.0, 7.0)
+        self.viewer.eye = (7.5, 7.5, 7.5)
         self.sim.dt = 1.0 / 60.0
         self.sim.render_interval = self.decimation
 
