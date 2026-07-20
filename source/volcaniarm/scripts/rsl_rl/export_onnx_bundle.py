@@ -124,6 +124,43 @@ class BundledVisionPolicy(torch.nn.Module):
         return self.actor(normed)
 
 
+class BundledAmePolicy(torch.nn.Module):
+    """AME policy with HSV masking + blob isolation baked into the graph.
+
+    Exposes the EXACT SAME three-input contract as `BundledVisionPolicy`
+    (`image` uint8 NHWC, `joint_pos_rel`, `last_action` -> `action`), so the
+    deployed C++ controller needs no changes at all: it keeps sending raw RGB
+    and never learns that the encoder behind the name changed.
+
+    Everything the observation pipeline does to the image lives inside the
+    graph, and it is the *same* torch code the training env calls. Parity is
+    structural rather than a convention someone has to re-verify.
+    """
+
+    def __init__(self, policy, mask_hw, mask_kwargs, lcc_iters, lcc_kernel):
+        super().__init__()
+        self.core = copy.deepcopy(policy).cpu().eval()
+        for p in self.core.parameters():
+            p.requires_grad_(False)
+        self.mask_hw = tuple(mask_hw)
+        self.mask_kwargs = dict(mask_kwargs)
+        self.lcc_iters = int(lcc_iters)
+        self.lcc_kernel = int(lcc_kernel)
+
+    def forward(self, image, joint_pos_rel, last_action):
+        from volcaniarm.tasks.manager_based.reach_vision_ame.mdp.green_mask import (
+            isolate_blob,
+            rgb_to_green_mask,
+        )
+
+        mask = rgb_to_green_mask(image, out_hw=self.mask_hw, **self.mask_kwargs)
+        mask = isolate_blob(mask, iters=self.lcc_iters, kernel=self.lcc_kernel)
+        # Order MUST equal contract.PROPRIO_TERMS — asserted against the live
+        # observation manager before export.
+        proprio = torch.cat([joint_pos_rel, last_action], dim=1)
+        return self.core.actor_forward(proprio, mask.flatten(1))
+
+
 @hydra_task_config(args_cli.task, args_cli.agent)
 def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
     agent_cfg = cli_args.update_rsl_rl_cfg(agent_cfg, args_cli)
@@ -155,10 +192,45 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
     except AttributeError:
         policy_nn = runner.alg.actor_critic
 
-    actor_mlp = policy_nn.actor
-    actor_normalizer = getattr(policy_nn, "actor_obs_normalizer", torch.nn.Identity())
+    if type(policy_nn).__name__ == "ActorCriticAME":
+        from volcaniarm.tasks.manager_based.reach_vision_ame.contract import (
+            GREEN_NOMINAL,
+            LCC_ITERS,
+            LCC_KERNEL,
+            PROPRIO_TERMS,
+        )
 
-    bundled = BundledVisionPolicy(actor_mlp, actor_normalizer).cpu().eval()
+        # Guard the implicit ordering contract. The proprio vector is
+        # assembled by name here and by declaration order in the env cfg; if
+        # they ever diverge the robot moves wrongly with no error anywhere.
+        # This turns a silent, deploy-only failure into an export-time crash.
+        declared = tuple(
+            env.unwrapped.observation_manager.active_terms["policy"]
+        )
+        if declared != PROPRIO_TERMS:
+            raise RuntimeError(
+                f"proprio term order drifted: env declares {declared}, "
+                f"contract.PROPRIO_TERMS is {PROPRIO_TERMS}. The ONNX bundle "
+                "concatenates inputs in the contract order — fix one or the other."
+            )
+
+        # The export bakes the NOMINAL thresholds, not the per-env jitter.
+        # That is deliberate: the jitter exists so the policy tolerates the
+        # nominal being slightly wrong on real hardware.
+        print(f"[export_onnx_bundle] baking nominal green thresholds: {GREEN_NOMINAL}")
+        bundled = (
+            BundledAmePolicy(
+                policy_nn, policy_nn.mask_hw, GREEN_NOMINAL, LCC_ITERS, LCC_KERNEL
+            )
+            .cpu()
+            .eval()
+        )
+    else:
+        actor_mlp = policy_nn.actor
+        actor_normalizer = getattr(policy_nn, "actor_obs_normalizer", torch.nn.Identity())
+        bundled = BundledVisionPolicy(actor_mlp, actor_normalizer).cpu().eval()
+
+    assert not bundled.training, "must export in eval() mode"
 
     # Pull resolution off the live camera sensor so we never drift from
     # the env_cfg constants.

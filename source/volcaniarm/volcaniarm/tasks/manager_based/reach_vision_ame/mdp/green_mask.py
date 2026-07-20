@@ -96,8 +96,13 @@ def rgb_to_green_mask(
         * torch.sigmoid((v - val_min) / softness)
     )
 
-    if out_hw is not None and (mask.shape[-2], mask.shape[-1]) != tuple(out_hw):
-        k = mask.shape[-2] // out_hw[0]
+    if out_hw is not None and (int(mask.shape[-2]), int(mask.shape[-1])) != tuple(out_hw):
+        # int() is load-bearing under torch.onnx.export: tracing turns
+        # `mask.shape[-2]` into a Tensor, and avg_pool2d rejects a tensor
+        # kernel_size ("must either be a single int, or a tuple of two ints").
+        # Forcing a Python int bakes the factor as a constant, which is correct
+        # here — only the batch axis is dynamic, H and W are fixed at CAM_H/W.
+        k = int(mask.shape[-2]) // int(out_hw[0])
         mask = torch.nn.functional.avg_pool2d(mask.unsqueeze(1), k).squeeze(1)
     return mask
 

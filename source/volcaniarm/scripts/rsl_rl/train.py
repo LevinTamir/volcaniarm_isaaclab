@@ -83,6 +83,7 @@ if version.parse(installed_version) < version.parse(RSL_RL_VERSION):
 """Rest everything follows."""
 
 import logging
+import math
 import os
 import time
 from datetime import datetime
@@ -238,8 +239,24 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                 break
         except (AttributeError, KeyError):
             continue
+    # Detect a 2-D mask observation group (the AME task's green-coverage map)
+    # by name, then infer its side length. Square-mask assumption is checked
+    # rather than assumed so a non-square group is skipped instead of being
+    # reshaped into garbage.
+    mask_group, mask_hw = None, None
+    if camera_name is not None and hasattr(unwrapped_env, "observation_manager"):
+        for group, dims in unwrapped_env.observation_manager.group_obs_dim.items():
+            if group in ("policy", "critic") or len(dims) != 1:
+                continue
+            side = int(round(math.sqrt(dims[0])))
+            if side * side == dims[0] and side > 1:
+                mask_group, mask_hw = group, (side, side)
+                break
+
     if camera_name is not None:
         print(f"[INFO] Logging frames from '{camera_name}' to TB every {image_log_interval} iters")
+        if mask_group is not None:
+            print(f"[INFO] Also logging obs group '{mask_group}' as {mask_hw[0]}x{mask_hw[1]} mask images")
         _orig_log = runner.log
 
         def _log_with_images(locs, width=80, pad=35):
@@ -254,6 +271,21 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             # (N, H, W, 3) -> (N, 3, H, W) for TB.
             sample = sample.permute(0, 3, 1, 2).clamp(0.0, 1.0)
             runner.writer.add_images("Camera/samples", sample, it)
+
+            # For mask-based tasks, log what the policy ACTUALLY consumes.
+            # The RGB frame above is only an intermediate; a mask that is dead,
+            # mis-thresholded, or locked onto the wrong object looks fine in
+            # RGB and ruins the run. Surfacing it here catches that at
+            # iteration 25 instead of after 3000.
+            if mask_group is not None:
+                try:
+                    m = unwrapped_env.observation_manager.compute_group(mask_group)
+                    m = m[:n].detach().float().clamp(0.0, 1.0)
+                    runner.writer.add_images(
+                        "Camera/mask", m.view(n, 1, mask_hw[0], mask_hw[1]), it
+                    )
+                except Exception as exc:  # never let logging kill a run
+                    print(f"[WARN] mask logging disabled: {exc}")
 
         runner.log = _log_with_images
 
