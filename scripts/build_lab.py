@@ -108,12 +108,18 @@ PLANT_USD = f"{NVIDIA_ASSET_ROOT}/NVIDIA/Assets/Vegetation/Plant_Tropical/Japane
 LIGHT_COLOR = Gf.Vec3f(1.00, 0.98, 0.95)
 LIGHT_INTENSITY = 5000.0
 
-# Default viewport pose — front-right of the arm, slightly above, aimed
-# at the end-effector height. Echoes the angle in the reference photo.
-# Base_link now lives at z=0.98, so the arm's working volume is roughly
-# z in [0.98, 1.5]; target and camera pulled up to match.
-VIEW_POS = Gf.Vec3d(2.0, -2.5, 1.5)
-VIEW_TARGET = Gf.Vec3d(0.0, 0.0, 1.1)
+# Default viewport pose — front-right of the arm, above the mat, aimed at the
+# middle of the working volume. Echoes the angle in the reference photo.
+#
+# The subject spans from the weed on the mat (z~0.07) up to base_link
+# (z=0.98), so the target sits between them rather than at base height; aiming
+# at 1.1 puts the mat and weed near the bottom edge of frame.
+#
+# Must stay INSIDE the room — see the assert in _seed_viewport_pose. The
+# previous pose (y=-2.5) silently ended up outside the south wall when the
+# room shrank from 8x8 to 3.5x4.0, which put the default view inside a wall.
+VIEW_POS = Gf.Vec3d(1.6, -1.2, 1.1)
+VIEW_TARGET = Gf.Vec3d(0.07, 0.0, 0.55)
 
 
 def _add_box(stage, path, scale, translate, color):
@@ -421,11 +427,37 @@ def _add_named_view_camera(overlay):
     cam.MakeMatrixXform().Set(view.GetInverse())
 
 
+def _assert_view_inside_room():
+    """Fail loudly if the seeded viewport pose is outside the walls.
+
+    This is a guard against exactly the bug it was written for: VIEW_POS was
+    authored for an 8x8 m room and silently ended up beyond the south wall
+    when the room shrank, so every fresh open of the stage started inside
+    geometry. A stale camera constant is invisible until someone opens the
+    USD, which makes it worth checking at build time.
+    """
+    x, y, z = VIEW_POS[0], VIEW_POS[1], VIEW_POS[2]
+    inside = (
+        ROOM_BACK_X < x < ROOM_FRONT_X
+        and -ROOM_HALF_Y < y < ROOM_HALF_Y
+        and FLOOR_Z_TOP < z < FLOOR_Z_TOP + WALL_HEIGHT
+    )
+    if not inside:
+        raise ValueError(
+            f"VIEW_POS {tuple(VIEW_POS)} is outside the room "
+            f"(x in ({ROOM_BACK_X}, {ROOM_FRONT_X}), "
+            f"y in ({-ROOM_HALF_Y}, {ROOM_HALF_Y}), "
+            f"z in ({FLOOR_Z_TOP}, {FLOOR_Z_TOP + WALL_HEIGHT})) — "
+            "the default viewport would open inside a wall."
+        )
+
+
 def _seed_viewport_pose(overlay):
     # Omniverse/Kit honors `customLayerData.cameraSettings` to seed the
     # viewport's default Perspective camera when a stage is first opened.
     # Without this the stock Kit start pose is far out and off-axis for
     # this scene.
+    _assert_view_inside_room()
     overlay.GetRootLayer().customLayerData = {
         "cameraSettings": {
             "Perspective": {
