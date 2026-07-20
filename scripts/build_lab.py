@@ -45,6 +45,14 @@ ROOM_FRONT_X = 3.0
 ROOM_HALF_Y = 2.0
 WALL_THICKNESS = 0.1
 WALL_HEIGHT = 2.6
+
+# Open-topped, open-fronted box. The room exists to give the camera a
+# realistic *background* (white wall behind the arm, side walls at the edges
+# of frame) — it is not meant to be a sealed volume. A ceiling and a front
+# wall only get in the way when you orbit the viewport out of the room, and
+# neither is ever visible to the arm-mounted camera.
+BUILD_CEILING = False
+BUILD_FRONT_WALL = False      # the +X wall, in front of the arm
 CEILING_THICKNESS = 0.1
 FLOOR_THICKNESS = 0.02
 
@@ -145,12 +153,16 @@ def _add_room_shell(overlay):
     )
 
     y_off = ROOM_HALF_Y + WALL_THICKNESS / 2.0
-    for name, sx, sy, tx, ty in [
+    walls = [
         ("WallNorth", span_x, WALL_THICKNESS, mid_x, y_off),
         ("WallSouth", span_x, WALL_THICKNESS, mid_x, -y_off),
-        ("WallEast", WALL_THICKNESS, span_y, ROOM_FRONT_X + WALL_THICKNESS / 2.0, 0.0),
         ("WallWest", WALL_THICKNESS, span_y, ROOM_BACK_X - WALL_THICKNESS / 2.0, 0.0),
-    ]:
+    ]
+    if BUILD_FRONT_WALL:
+        walls.append(
+            ("WallEast", WALL_THICKNESS, span_y, ROOM_FRONT_X + WALL_THICKNESS / 2.0, 0.0)
+        )
+    for name, sx, sy, tx, ty in walls:
         _add_box(
             overlay, f"{LAB_PATH}/{name}",
             scale=(sx, sy, WALL_HEIGHT),
@@ -159,12 +171,15 @@ def _add_room_shell(overlay):
         )
 
     ceiling_center_z = FLOOR_Z_TOP + WALL_HEIGHT + CEILING_THICKNESS / 2.0
-    _add_box(
-        overlay, f"{LAB_PATH}/Ceiling",
-        scale=(span_x, span_y, CEILING_THICKNESS),
-        translate=(mid_x, 0.0, ceiling_center_z),
-        color=CEILING_COLOR,
-    )
+    if BUILD_CEILING:
+        _add_box(
+            overlay, f"{LAB_PATH}/Ceiling",
+            scale=(span_x, span_y, CEILING_THICKNESS),
+            translate=(mid_x, 0.0, ceiling_center_z),
+            color=CEILING_COLOR,
+        )
+    # Returned regardless: the ceiling light hangs at this height whether or
+    # not the ceiling slab itself is built.
     return ceiling_center_z
 
 
