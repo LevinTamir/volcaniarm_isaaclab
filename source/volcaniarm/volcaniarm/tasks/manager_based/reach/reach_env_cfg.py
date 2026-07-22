@@ -194,7 +194,7 @@ class RewardsCfg:
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
         weight=-0.001,
-        params={"asset_cfg": SceneEntityCfg("robot")},
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["volcaniarm_(left|right)_elbow_joint"])},
     )
 
 
@@ -221,7 +221,7 @@ class VolcaniarmReachEnvCfg(ManagerBasedRLEnvCfg):
     def __post_init__(self):
         self.decimation = 2
         self.episode_length_s = 12.0
-        self.viewer.eye = (2.5, 2.5, 2.0)
+        self.viewer.eye = (7.5, 7.5, 7.5)
         self.sim.dt = 1.0 / 60.0
         self.sim.render_interval = self.decimation
 
@@ -230,6 +230,13 @@ class VolcaniarmReachEnvCfg(ManagerBasedRLEnvCfg):
 class VolcaniarmReachEnvCfg_PLAY(VolcaniarmReachEnvCfg):
     def __post_init__(self):
         super().__post_init__()
-        self.scene.num_envs = 50
+        # Single arm for validation.
+        self.scene.num_envs = 1
         self.scene.env_spacing = 2.5
+        # Same isometric 3/4 angle as the training view (equal x/y, elevated
+        # z) but pulled in to ~2.2 m on the one arm, centred on its workspace
+        # (EE at z≈0.21 up to the black base mount at z≈0.96).
+        self.viewer.origin_type = "world"
+        self.viewer.eye = (1.4, 1.4, 1.5)
+        self.viewer.lookat = (0.0, 0.0, 0.55)
         self.observations.policy.enable_corruption = False

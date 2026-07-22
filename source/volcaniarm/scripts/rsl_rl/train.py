@@ -44,8 +44,15 @@ args_cli, hydra_args = parser.parse_known_args()
 if args_cli.video:
     args_cli.enable_cameras = True
 
+# Mirror the per-task split for Hydra's working dir: route
+# `outputs/<date>/<time>/` to `outputs/<task>/<date>/<time>/`. The
+# OmegaConf interpolation `${now:...}` is preserved verbatim — only the
+# task slug is materialised here.
+_task_subdir = cli_args.task_log_subdir(args_cli.task)
+_hydra_run_dir_override = f"hydra.run.dir=outputs/{_task_subdir}/${{now:%Y-%m-%d}}/${{now:%H-%M-%S}}"
+
 # clear out sys.argv for Hydra
-sys.argv = [sys.argv[0]] + hydra_args
+sys.argv = [sys.argv[0], _hydra_run_dir_override] + hydra_args
 
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
@@ -76,6 +83,7 @@ if version.parse(installed_version) < version.parse(RSL_RL_VERSION):
 """Rest everything follows."""
 
 import logging
+import math
 import os
 import time
 from datetime import datetime
@@ -142,8 +150,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         env_cfg.seed = seed
         agent_cfg.seed = seed
 
-    # specify directory for logging experiments
-    log_root_path = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name)
+    # specify directory for logging experiments — one subfolder per
+    # task ("reach", "reach_vision", ...) so artefacts don't pile up
+    # together; existing per-experiment / timestamp layout preserved
+    # underneath.
+    task_subdir = cli_args.task_log_subdir(args_cli.task)
+    log_root_path = os.path.join("logs", task_subdir, "rsl_rl", agent_cfg.experiment_name)
     log_root_path = os.path.abspath(log_root_path)
     print(f"[INFO] Logging experiment in directory: {log_root_path}")
     # specify directory for logging runs: {time-stamp}_{run_name}
@@ -212,6 +224,70 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # dump the configuration into log-directory
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
     dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
+
+    # If the env has an RGB camera, push sample frames into TB every
+    # `image_log_interval` iters so the IMAGES tab shows what the policy
+    # actually sees — useful for verifying that domain randomization is
+    # firing across runs and for spotting visual sim-to-real gaps early.
+    image_log_interval = 25
+    unwrapped_env = env.unwrapped
+    camera_name = None
+    for sensor_name, sensor in unwrapped_env.scene.sensors.items():
+        try:
+            if "rgb" in sensor.data.output:
+                camera_name = sensor_name
+                break
+        except (AttributeError, KeyError):
+            continue
+    # Detect a 2-D mask observation group (the AME task's green-coverage map)
+    # by name, then infer its side length. Square-mask assumption is checked
+    # rather than assumed so a non-square group is skipped instead of being
+    # reshaped into garbage.
+    mask_group, mask_hw = None, None
+    if camera_name is not None and hasattr(unwrapped_env, "observation_manager"):
+        for group, dims in unwrapped_env.observation_manager.group_obs_dim.items():
+            if group in ("policy", "critic") or len(dims) != 1:
+                continue
+            side = int(round(math.sqrt(dims[0])))
+            if side * side == dims[0] and side > 1:
+                mask_group, mask_hw = group, (side, side)
+                break
+
+    if camera_name is not None:
+        print(f"[INFO] Logging frames from '{camera_name}' to TB every {image_log_interval} iters")
+        if mask_group is not None:
+            print(f"[INFO] Also logging obs group '{mask_group}' as {mask_hw[0]}x{mask_hw[1]} mask images")
+        _orig_log = runner.log
+
+        def _log_with_images(locs, width=80, pad=35):
+            _orig_log(locs, width=width, pad=pad)
+            it = locs.get("it", 0)
+            if it % image_log_interval != 0:
+                return
+            rgb = unwrapped_env.scene[camera_name].data.output["rgb"]
+            n = min(4, rgb.shape[0])
+            sample = rgb[:n].detach()
+            sample = sample.float() / 255.0 if sample.dtype == torch.uint8 else sample
+            # (N, H, W, 3) -> (N, 3, H, W) for TB.
+            sample = sample.permute(0, 3, 1, 2).clamp(0.0, 1.0)
+            runner.writer.add_images("Camera/samples", sample, it)
+
+            # For mask-based tasks, log what the policy ACTUALLY consumes.
+            # The RGB frame above is only an intermediate; a mask that is dead,
+            # mis-thresholded, or locked onto the wrong object looks fine in
+            # RGB and ruins the run. Surfacing it here catches that at
+            # iteration 25 instead of after 3000.
+            if mask_group is not None:
+                try:
+                    m = unwrapped_env.observation_manager.compute_group(mask_group)
+                    m = m[:n].detach().float().clamp(0.0, 1.0)
+                    runner.writer.add_images(
+                        "Camera/mask", m.view(n, 1, mask_hw[0], mask_hw[1]), it
+                    )
+                except Exception as exc:  # never let logging kill a run
+                    print(f"[WARN] mask logging disabled: {exc}")
+
+        runner.log = _log_with_images
 
     # run training
     runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)

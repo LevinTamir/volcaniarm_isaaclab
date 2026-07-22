@@ -20,6 +20,21 @@ parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
 parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
 parser.add_argument("--video_length", type=int, default=200, help="Length of the recorded video (in steps).")
 parser.add_argument(
+    "--video_name",
+    type=str,
+    default="rl-video",
+    help="Filename prefix for the recorded play video (lets repeat runs avoid overwriting).",
+)
+parser.add_argument(
+    "--log_ee_error",
+    action="store_true",
+    default=False,
+    help="Record per-step EE position error over the rollout, save play_ee_error.npz, and print a summary.",
+)
+parser.add_argument(
+    "--command_name", type=str, default="ee_pose", help="Command term to read position_error from (--log_ee_error)."
+)
+parser.add_argument(
     "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
 )
 parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
@@ -44,8 +59,13 @@ args_cli, hydra_args = parser.parse_known_args()
 if args_cli.video:
     args_cli.enable_cameras = True
 
+# Mirror train.py: route Hydra's `outputs/<date>/<time>/` under the
+# per-task subfolder so play runs land alongside their training runs.
+_task_subdir = cli_args.task_log_subdir(args_cli.task)
+_hydra_run_dir_override = f"hydra.run.dir=outputs/{_task_subdir}/${{now:%Y-%m-%d}}/${{now:%H-%M-%S}}"
+
 # clear out sys.argv for Hydra
-sys.argv = [sys.argv[0]] + hydra_args
+sys.argv = [sys.argv[0], _hydra_run_dir_override] + hydra_args
 
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
@@ -54,9 +74,11 @@ simulation_app = app_launcher.app
 """Rest everything follows."""
 
 import os
+import re
 import time
 
 import gymnasium as gym
+import numpy as np
 import torch
 from rsl_rl.runners import DistillationRunner, OnPolicyRunner
 
@@ -96,8 +118,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     env_cfg.seed = agent_cfg.seed
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
 
-    # specify directory for logging experiments
-    log_root_path = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name)
+    # mirror train.py: per-task subfolder under logs/.
+    task_subdir = cli_args.task_log_subdir(args_cli.task)
+    log_root_path = os.path.join("logs", task_subdir, "rsl_rl", agent_cfg.experiment_name)
     log_root_path = os.path.abspath(log_root_path)
     print(f"[INFO] Loading experiment from directory: {log_root_path}")
     if args_cli.use_pretrained_checkpoint:
@@ -129,6 +152,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             "step_trigger": lambda step: step == 0,
             "video_length": args_cli.video_length,
             "disable_logger": True,
+            "name_prefix": args_cli.video_name,
         }
         print("[INFO] Recording videos during training.")
         print_dict(video_kwargs, nesting=4)
@@ -169,10 +193,28 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # export policy to onnx/jit
     export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
-    export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
-    export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
+    if type(policy_nn).__name__ == "ActorCriticAME":
+        # The stock exporters copy `policy.actor` and wrap it as
+        # actor(normalizer(x)). For AME that is ONLY the final MLP — the CNN
+        # and the attention layer are silently dropped, and the result expects
+        # a 68-D vector that nothing produces. It would export without error
+        # and look deployable, which is worse than failing.
+        # The real artifact comes from export_onnx_bundle.py.
+        print(
+            "[play] skipping stock jit/onnx export for ActorCriticAME — it would\n"
+            "       drop the CNN+attention encoder. Use instead:\n"
+            "         isaaclab.sh -p source/volcaniarm/scripts/rsl_rl/export_onnx_bundle.py \\\n"
+            f"           --task {args_cli.task} --num_envs 2 --headless --enable_cameras"
+        )
+    else:
+        export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
+        export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
 
     dt = env.unwrapped.step_dt
+
+    # optional EE-error logging over the rollout
+    ee_term = env.unwrapped.command_manager.get_term(args_cli.command_name) if args_cli.log_ee_error else None
+    ee_errs, ee_tleft = [], []
 
     # reset environment
     obs = env.get_observations()
@@ -188,9 +230,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             obs, _, dones, _ = env.step(actions)
             # reset recurrent states for episodes that have terminated
             policy_nn.reset(dones)
-        if args_cli.video:
+        if args_cli.log_ee_error:
+            ee_errs.append(ee_term.metrics["position_error"].detach().cpu().numpy().copy())
+            ee_tleft.append(ee_term.time_left.detach().cpu().numpy().copy())
+        if args_cli.video or args_cli.log_ee_error:
             timestep += 1
-            # Exit the play loop after recording one video
+            # Exit the play loop after the recording / logging window
             if timestep == args_cli.video_length:
                 break
 
@@ -198,6 +243,30 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         sleep_time = dt - (time.time() - start_time)
         if args_cli.real_time and sleep_time > 0:
             time.sleep(sleep_time)
+
+    # save the EE-error log + print a summary
+    if args_cli.log_ee_error and ee_errs:
+        m = re.search(r"model_(\d+)", os.path.basename(resume_path))
+        iteration = int(m.group(1)) if m else -1
+        out_dir = os.path.join(log_dir, "plots")
+        os.makedirs(out_dir, exist_ok=True)
+        out = os.path.join(out_dir, "play_ee_error.npz")
+        err, tleft = np.asarray(ee_errs), np.asarray(ee_tleft)
+        np.savez(
+            out,
+            error=err,
+            time_left=tleft,
+            resample_period=float(ee_term.cfg.resampling_time_range[1]),
+            step_dt=float(env.unwrapped.step_dt),
+            iteration=iteration,
+        )
+        settled = err[tleft < 1.0]
+        print(f"[INFO] EE error over {err.shape[0]} steps x {err.shape[1]} env(s) (iter {iteration}):")
+        print(
+            f"       episode-mean {err.mean()*100:.2f} cm | settled median {np.median(settled)*100:.2f} cm | "
+            f"within 2 cm {(settled < 0.02).mean()*100:.1f}%"
+        )
+        print(f"[INFO] Wrote {out}")
 
     # close the simulator
     env.close()

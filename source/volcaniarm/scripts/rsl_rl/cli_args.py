@@ -39,6 +39,24 @@ def add_rsl_rl_args(parser: argparse.ArgumentParser):
     )
 
 
+def task_log_subdir(task_id: str | None) -> str:
+    """Per-task subfolder name for `logs/<...>/rsl_rl/<experiment>/<run>/`.
+
+    Strips the ``Volcaniarm-`` prefix, the ``-vN`` suffix, and any
+    ``-Play`` segment so the play script lands in the same subfolder
+    its training counterpart wrote to.
+    """
+    if not task_id:
+        return "default"
+    parts = task_id.split(":")[-1].split("-")
+    if parts and parts[0].lower() == "volcaniarm":
+        parts = parts[1:]
+    parts = [p for p in parts if p.lower() != "play"]
+    if parts and parts[-1].lower().startswith("v") and parts[-1][1:].isdigit():
+        parts = parts[:-1]
+    return "_".join(p.lower() for p in parts) or "default"
+
+
 def parse_rsl_rl_cfg(task_name: str, args_cli: argparse.Namespace) -> RslRlBaseRunnerCfg:
     """Parse configuration for RSL-RL agent based on inputs.
 
