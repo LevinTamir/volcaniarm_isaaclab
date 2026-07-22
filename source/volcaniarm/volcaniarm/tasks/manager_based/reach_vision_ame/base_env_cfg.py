@@ -305,7 +305,10 @@ class VolcaniarmReachVisionEnvCfg(ManagerBasedRLEnvCfg):
     def __post_init__(self):
         self.decimation = 2
         self.episode_length_s = 12.0
-        self.viewer.eye = (2.5, 2.5, 2.0)
+        # Wide diagonal view over the env grid (2.5 m spacing): frames a
+        # ~3x3 block of robots in the training videos instead of one.
+        self.viewer.eye = (10.0, 10.0, 6.0)
+        self.viewer.lookat = (0.0, 0.0, 0.9)
         self.sim.dt = 1.0 / 60.0
         self.sim.render_interval = self.decimation
 
