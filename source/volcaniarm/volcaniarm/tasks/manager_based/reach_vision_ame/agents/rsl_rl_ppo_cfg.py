@@ -71,7 +71,8 @@ class AmeActorCriticCfg(RslRlPpoActorCriticCfg):
 @configclass
 class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 32
-    max_iterations = 3000
+    # 1000 is plenty: the 2026-07-20 run at this design plateaued ~iter 450.
+    max_iterations = 1000
     save_interval = 100
     experiment_name = "volcaniarm_reach_vision_ame"
     empirical_normalization = False
