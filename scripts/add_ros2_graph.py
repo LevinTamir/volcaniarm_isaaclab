@@ -13,7 +13,15 @@ The overlay adds:
       - subscribes /joint_commands               (sensor_msgs/JointState) → ArticulationController
       - publishes  /camera/color/image_raw       (sensor_msgs/Image, rgb)
       - publishes  /camera/color/camera_info     (sensor_msgs/CameraInfo)
-      - publishes  /camera/depth/color/points    (sensor_msgs/PointCloud2, colored depth)
+      - publishes  /camera/aligned_depth_to_color/image_raw
+                                                 (sensor_msgs/Image, 32FC1 m)
+
+No pointcloud is published from Isaac: the bridge's depth_pcl output is
+XYZ-only (colorless), so /camera/depth/color/points is instead composed
+ROS-side from the color + depth images by the shared depth_image_proc
+pipeline (volcaniarm_ws: volcaniarm_bringup/launch/
+camera_pointcloud.launch.py) — the same code path used with Gazebo and
+the real RealSense.
 
 After generating, open the USD in Isaac Sim GUI and press Play. Test from
 a ROS2 terminal:
@@ -22,7 +30,7 @@ a ROS2 terminal:
       "{name: [volcaniarm_left_elbow_joint, volcaniarm_right_elbow_joint], \\
         position: [0.5, -0.5]}"
     ros2 topic hz /camera/color/image_raw
-    ros2 topic hz /camera/depth/color/points
+    ros2 topic hz /camera/aligned_depth_to_color/image_raw
 
 Run with (outside any conda env — uses Isaac Sim's bundled Python so
 the ROS2 bridge's rclpy version matches and the full kit loads):
@@ -69,7 +77,10 @@ STATE_TOPIC = "/isaac_joint_states"
 CLOCK_TOPIC = "/clock"
 CAM_RGB_TOPIC = "color/image_raw"
 CAM_INFO_TOPIC = "color/camera_info"
-CAM_PCL_TOPIC = "depth/color/points"
+# Aligned by construction: same render product as the color image. The name
+# mirrors the RealSense driver's topic so the ROS-side depth_image_proc
+# composer works unchanged across real / Gazebo / Isaac.
+CAM_DEPTH_TOPIC = "aligned_depth_to_color/image_raw"
 CAM_NAMESPACE = "camera"
 CAM_FRAME = "camera_color_optical_frame"
 CAM_WIDTH = 640
@@ -187,7 +198,7 @@ def main() -> None:
                 ("CreateRenderProduct", "isaacsim.core.nodes.IsaacCreateRenderProduct"),
                 ("CameraHelperRGB", "isaacsim.ros2.bridge.ROS2CameraHelper"),
                 ("CameraHelperInfo", "isaacsim.ros2.bridge.ROS2CameraInfoHelper"),
-                ("CameraHelperPCL", "isaacsim.ros2.bridge.ROS2CameraHelper"),
+                ("CameraHelperDepth", "isaacsim.ros2.bridge.ROS2CameraHelper"),
             ],
             og.Controller.Keys.CONNECT: [
                 ("OnTick.outputs:tick", "PublishClock.inputs:execIn"),
@@ -207,13 +218,13 @@ def main() -> None:
                 ("OnTick.outputs:tick", "CreateRenderProduct.inputs:execIn"),
                 ("CreateRenderProduct.outputs:execOut", "CameraHelperRGB.inputs:execIn"),
                 ("CreateRenderProduct.outputs:execOut", "CameraHelperInfo.inputs:execIn"),
-                ("CreateRenderProduct.outputs:execOut", "CameraHelperPCL.inputs:execIn"),
+                ("CreateRenderProduct.outputs:execOut", "CameraHelperDepth.inputs:execIn"),
                 ("CreateRenderProduct.outputs:renderProductPath", "CameraHelperRGB.inputs:renderProductPath"),
                 ("CreateRenderProduct.outputs:renderProductPath", "CameraHelperInfo.inputs:renderProductPath"),
-                ("CreateRenderProduct.outputs:renderProductPath", "CameraHelperPCL.inputs:renderProductPath"),
+                ("CreateRenderProduct.outputs:renderProductPath", "CameraHelperDepth.inputs:renderProductPath"),
                 ("Context.outputs:context", "CameraHelperRGB.inputs:context"),
                 ("Context.outputs:context", "CameraHelperInfo.inputs:context"),
-                ("Context.outputs:context", "CameraHelperPCL.inputs:context"),
+                ("Context.outputs:context", "CameraHelperDepth.inputs:context"),
             ],
             og.Controller.Keys.SET_VALUES: [
                 ("PublishClock.inputs:topicName", CLOCK_TOPIC),
@@ -242,10 +253,10 @@ def main() -> None:
                 ("CameraHelperInfo.inputs:topicName", CAM_INFO_TOPIC),
                 ("CameraHelperInfo.inputs:frameId", CAM_FRAME),
                 ("CameraHelperInfo.inputs:nodeNamespace", CAM_NAMESPACE),
-                ("CameraHelperPCL.inputs:type", "depth_pcl"),
-                ("CameraHelperPCL.inputs:topicName", CAM_PCL_TOPIC),
-                ("CameraHelperPCL.inputs:frameId", CAM_FRAME),
-                ("CameraHelperPCL.inputs:nodeNamespace", CAM_NAMESPACE),
+                ("CameraHelperDepth.inputs:type", "depth"),
+                ("CameraHelperDepth.inputs:topicName", CAM_DEPTH_TOPIC),
+                ("CameraHelperDepth.inputs:frameId", CAM_FRAME),
+                ("CameraHelperDepth.inputs:nodeNamespace", CAM_NAMESPACE),
             ],
         },
     )
