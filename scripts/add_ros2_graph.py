@@ -83,7 +83,11 @@ CAM_INFO_TOPIC = "color/camera_info"
 CAM_DEPTH_TOPIC = "aligned_depth_to_color/image_raw"
 CAM_NAMESPACE = "camera"
 CAM_FRAME = "camera_color_optical_frame"
-CAM_WIDTH = 640
+# Match the RealSense D435i color stream as configured in real_bringup
+# (rgb_camera.color_profile 848x480). The composed pointcloud inherits the
+# COLOR intrinsics (depth is aligned to color), so this is the geometry
+# that must agree across real / Gazebo / Isaac.
+CAM_WIDTH = 848
 CAM_HEIGHT = 480
 GROUND_Z = 0.0           # floor at world z=0
 # The robot lift is measured, not hardcoded: after referencing the robot,
@@ -170,10 +174,15 @@ def main() -> None:
             "camera_link + camera_mount_rev_link chain; regenerate convert_urdf.py if missing."
         )
     camera = UsdGeom.Camera.Define(stage, CAMERA_SENSOR_PATH)
+    # D435i color-sensor geometry: HFOV 69°, VFOV ~42.6° at the 848x480
+    # aspect. With focal F, hAperture = 2*F*tan(69°/2) = 1.37456*F; the
+    # vertical aperture keeps the pixel aspect square (h * 480/848).
+    # Clipping mirrors the D435 usable depth band: MinZ ≈ 0.195 m at
+    # 848x480, max rated range 10 m.
     camera.CreateFocalLengthAttr(18.14721)
-    camera.CreateHorizontalApertureAttr(20.955)
-    camera.CreateVerticalApertureAttr(15.2908)
-    camera.CreateClippingRangeAttr(Gf.Vec2f(0.05, 50.0))
+    camera.CreateHorizontalApertureAttr(24.9438)
+    camera.CreateVerticalApertureAttr(14.1191)
+    camera.CreateClippingRangeAttr(Gf.Vec2f(0.195, 10.0))
     # USD cameras look down -Z with Y up (GL convention); ROS optical
     # frames look +Z with Y down relative to the body camera_link (with
     # camera_link_optical = camera_link rotated rpy=(-pi/2, 0, -pi/2)).
