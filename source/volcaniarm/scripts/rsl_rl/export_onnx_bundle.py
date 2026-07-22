@@ -237,13 +237,23 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
 
     assert not bundled.training, "must export in eval() mode"
 
-    # Pull resolution off the live camera sensor so we never drift from
-    # the env_cfg constants.
-    sensor = env.unwrapped.scene.sensors["base_camera"]
-    H, W = int(sensor.cfg.height), int(sensor.cfg.width)
-    print(f"[export_onnx_bundle] camera resolution: {W}x{H}")
+    # The bundle's image input is CAM_HxCAM_W — what the deployed controller
+    # sends after its cv::resize of the raw stream — NOT the training
+    # camera's render resolution. Since the D435i parity change the two
+    # differ (render 96x170 anamorphic, controller input 96x96): the env's
+    # green_mask term squashes render->CAM before masking, and at deploy the
+    # controller's resize does the same job outside the graph. Sizing the
+    # dummy off the live sensor (the old code here) fed the un-squashed
+    # 96x170 frame into the mask math and broke the 48x48 contract.
+    from volcaniarm.tasks.manager_based.reach_vision_ame.contract import CAM_H, CAM_W
 
-    image_dummy = torch.zeros(1, H, W, 3, dtype=torch.uint8)
+    sensor = env.unwrapped.scene.sensors["base_camera"]
+    print(
+        f"[export_onnx_bundle] bundle image input: {CAM_W}x{CAM_H} "
+        f"(training camera renders {int(sensor.cfg.width)}x{int(sensor.cfg.height)})"
+    )
+
+    image_dummy = torch.zeros(1, CAM_H, CAM_W, 3, dtype=torch.uint8)
     jpr_dummy = torch.zeros(1, 2)
     la_dummy = torch.zeros(1, 2)
 
