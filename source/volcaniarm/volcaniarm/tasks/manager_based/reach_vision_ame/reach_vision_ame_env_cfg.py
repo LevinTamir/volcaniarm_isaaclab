@@ -43,6 +43,8 @@ from .base_env_cfg import (
     VolcaniarmReachVisionSceneCfg,
 )
 from . import mdp
+from . import workspace_table
+from .base_env_cfg import ELBOW_IN_RANGE_RAD
 from .contract import (
     MASK_GROUP,
     MASK_H,
@@ -52,10 +54,9 @@ from .contract import (
     RENDER_H,
     RENDER_W,
     WEED_COLOR,
-    WEED_SPAWN_Z_WORLD,
     WEED_X_BASE,
-    WEED_Y_RANGE,
-    WEED_Z_JITTER,
+    WEED_Y_SAFETY_MARGIN,
+    WEED_Z_RANGE_WORLD,
 )
 
 ELBOW_JOINTS = ["volcaniarm_(left|right)_elbow_joint"]
@@ -226,10 +227,11 @@ class AmeObservationsCfg:
 class AmeEventCfg:
     """Reset events. Lighting/camera DR inherited in spirit from `reach_vision`.
 
-    The weed is sampled along a *line*: X is pinned by the planar mechanism, Z
-    is pinned because the weed stands on the mat, and only Y varies. The Y
-    range is measured (see `scripts/check_workspace.py`), not inherited — the
-    older tasks sampled +-0.50 while only [-0.287, 0.299] is reachable.
+    The weed canopy is sampled over the measured reachable-and-visible (y, z)
+    envelope: z uniform in WEED_Z_RANGE_WORLD, y uniform in the per-z interval
+    from the generated `workspace_table` minus WEED_Y_SAFETY_MARGIN. X stays
+    pinned by the planar mechanism. Above ~0.13 the weed floats over the mat,
+    standing in for taller weeds.
     """
 
     reset_robot_joints = EventTerm(
@@ -243,39 +245,27 @@ class AmeEventCfg:
     )
 
     randomize_weed_pose = EventTerm(
-        func=mdp.reset_root_state_uniform,
+        func=mdp.reset_weed_in_reachable_workspace,
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("weed"),
-            "pose_range": {
-                "x": (WEED_X_BASE, WEED_X_BASE),
-                "y": WEED_Y_RANGE,
-                "z": (
-                    WEED_SPAWN_Z_WORLD + WEED_Z_JITTER[0],
-                    WEED_SPAWN_Z_WORLD + WEED_Z_JITTER[1],
-                ),
-            },
-            "velocity_range": {},
+            "x_pos": WEED_X_BASE,
+            "z_range": WEED_Z_RANGE_WORLD,
+            "y_margin": WEED_Y_SAFETY_MARGIN,
         },
     )
 
     # Mid-episode resample: ~3 reach attempts per 12 s episode instead of 1.
     resample_weed_pose = EventTerm(
-        func=mdp.reset_root_state_uniform,
+        func=mdp.reset_weed_in_reachable_workspace,
         mode="interval",
         interval_range_s=(4.0, 4.0),
         is_global_time=False,
         params={
             "asset_cfg": SceneEntityCfg("weed"),
-            "pose_range": {
-                "x": (WEED_X_BASE, WEED_X_BASE),
-                "y": WEED_Y_RANGE,
-                "z": (
-                    WEED_SPAWN_Z_WORLD + WEED_Z_JITTER[0],
-                    WEED_SPAWN_Z_WORLD + WEED_Z_JITTER[1],
-                ),
-            },
-            "velocity_range": {},
+            "x_pos": WEED_X_BASE,
+            "z_range": WEED_Z_RANGE_WORLD,
+            "y_margin": WEED_Y_SAFETY_MARGIN,
         },
     )
 
@@ -342,9 +332,15 @@ class VolcaniarmReachVisionAmeEnvCfg(VolcaniarmReachVisionEnvCfg):
 
     def __post_init__(self):
         super().__post_init__()
-        # Nothing to retarget: the inherited reward terms resolve their target
-        # through `weed_cfg`, which already defaults to SceneEntityCfg("weed"),
-        # and this scene names its target entity `weed`.
+        # The inherited reward terms resolve their target through `weed_cfg`,
+        # which already defaults to SceneEntityCfg("weed"); nothing to
+        # retarget. But the sampling table must match the reward's elbow
+        # bound — a stale table silently trains on the wrong envelope.
+        assert abs(workspace_table.ELBOW_LIMIT_RAD - ELBOW_IN_RANGE_RAD) < 1e-4, (
+            f"workspace_table.py was generated at elbow limit "
+            f"{workspace_table.ELBOW_LIMIT_RAD} but the reward bound is "
+            f"{ELBOW_IN_RANGE_RAD} — regenerate it (see the table header)"
+        )
 
 
 @configclass

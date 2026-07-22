@@ -34,6 +34,13 @@ WEED_X_BASE = 0.071
 WEED_Y_RANGE = (-0.50, 0.50)
 WEED_Z_RANGE = (-0.98, -0.78)
 
+# Joint-range reward bounds. The elbow bound doubles as the sweep limit for
+# the generated workspace_table (its ELBOW_LIMIT_RAD must match — asserted
+# in the AME env cfg). Re-measured 2026-07-22: widening past ±75° gains no
+# workspace below z=0.30, so these stay at the deploy-validated values.
+ELBOW_IN_RANGE_RAD = 1.3089969389957472  # ±75°
+ARM_IN_RANGE_RAD = (-1.5707963267948966, 0.8726646259971648)  # -90°..+50°
+
 # Image resolution — small enough that 512+ envs fit on one GPU,
 # large enough for ResNet18 ImageNet weights to be in distribution
 # (model expects ~224x224 but tolerates smaller; we accept that
@@ -229,8 +236,8 @@ class RewardsCfg:
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=["volcaniarm_(left|right)_elbow_joint"]
             ),
-            "low": -1.3089969389957472,
-            "high": 1.3089969389957472,
+            "low": -ELBOW_IN_RANGE_RAD,
+            "high": ELBOW_IN_RANGE_RAD,
         },
     )
     arm_pos_in_range = RewTerm(
@@ -240,8 +247,8 @@ class RewardsCfg:
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=["volcaniarm_(left|right)_arm_joint"]
             ),
-            "low": -1.5707963267948966,
-            "high": 0.8726646259971648,
+            "low": ARM_IN_RANGE_RAD[0],
+            "high": ARM_IN_RANGE_RAD[1],
         },
     )
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.001)

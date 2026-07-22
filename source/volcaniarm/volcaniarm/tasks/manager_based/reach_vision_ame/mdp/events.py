@@ -31,26 +31,26 @@ def _balanced_color_jitter(base: tuple[float, float, float], variation: float) -
     return tuple(max(0.0, min(1.0, b + o)) for b, o in zip(base, balanced))
 
 
-def _find_diffuse_color_attr(prim):
-    """Walk children looking for a Shader prim with a `diffuseColor` input.
+def _find_diffuse_color_attr(prim, _depth: int = 0):
+    """Walk the subtree looking for a Shader prim with a `diffuseColor` input.
 
     Matches both UsdPreviewSurface (input name `diffuseColor`) and the
-    inputs Isaac's PreviewSurfaceCfg authors during spawn.
+    inputs Isaac's PreviewSurfaceCfg authors during spawn. Depth-bounded
+    recursion: spawned props nest the shader at varying depth (e.g.
+    <prim>/Looks/Material/Shader for a UsdFileCfg-spawned mesh).
     """
     from pxr import UsdShade
 
+    if _depth > 6:
+        return None
+    if prim.IsA(UsdShade.Shader):
+        attr = prim.GetAttribute("inputs:diffuseColor")
+        if attr.IsValid():
+            return attr
     for child in prim.GetAllChildren():
-        if child.IsA(UsdShade.Shader):
-            attr = child.GetAttribute("inputs:diffuseColor")
-            if attr.IsValid():
-                return attr
-        # Recurse one level — PreviewSurfaceCfg sometimes wraps shaders
-        # in an intermediate scope (e.g. <prim>/Looks/Material/Shader).
-        for grandchild in child.GetAllChildren():
-            if grandchild.IsA(UsdShade.Shader):
-                attr = grandchild.GetAttribute("inputs:diffuseColor")
-                if attr.IsValid():
-                    return attr
+        attr = _find_diffuse_color_attr(child, _depth + 1)
+        if attr is not None:
+            return attr
     return None
 
 
@@ -103,6 +103,132 @@ def randomize_light(
         if color_attr.IsValid():
             color = _balanced_color_jitter(color_base, color_variation)
             color_attr.Set(color)
+
+
+class reset_weed_in_reachable_workspace(ManagerTermBase):
+    """Sample the weed canopy (y, z) uniformly inside the measured envelope.
+
+    z ~ U(z_range); y ~ U(y_min(z) + margin, y_max(z) - margin), where the
+    per-z y-interval comes from the generated `workspace_table` module
+    (measured by scripts/check_workspace.py --emit-table). X is pinned by
+    the planar mechanism. Serves both mode="reset" and mode="interval" —
+    the event manager passes the due env_ids the same way for both.
+    """
+
+    def __init__(self, cfg: "EventTermCfg", env: "ManagerBasedEnv"):
+        super().__init__(cfg, env)
+        from ..workspace_table import TABLE
+
+        z_range = cfg.params["z_range"]
+        y_margin = cfg.params["y_margin"]
+        rows = [r for r in TABLE if r[1] > z_range[0] and r[0] < z_range[1]]
+        if not rows:
+            raise ValueError(f"workspace_table has no rows covering z_range={z_range}")
+        # Contiguity + coverage: the sampler lerps inside a row and must
+        # never draw a z that falls between rows.
+        for a, b in zip(rows[:-1], rows[1:]):
+            if abs(a[1] - b[0]) > 1e-6:
+                raise ValueError(f"workspace_table gap between z={a[1]} and z={b[0]}")
+        if rows[0][0] > z_range[0] + 1e-6 or rows[-1][1] < z_range[1] - 1e-6:
+            raise ValueError(
+                f"workspace_table rows cover [{rows[0][0]}, {rows[-1][1]}] "
+                f"but z_range={z_range} — regenerate the table or shrink the band"
+            )
+        too_narrow = [r for r in rows if (r[3] - r[2]) <= 2.0 * y_margin]
+        if too_narrow:
+            raise ValueError(
+                f"{len(too_narrow)} table rows narrower than 2*y_margin={2*y_margin}: "
+                f"first={too_narrow[0]} — shrink z_range or y_margin"
+            )
+        dev = env.device
+        self._z_lo = torch.tensor([r[0] for r in rows], device=dev)
+        self._z_hi = torch.tensor([r[1] for r in rows], device=dev)
+        self._y_min = torch.tensor([r[2] + y_margin for r in rows], device=dev)
+        self._y_max = torch.tensor([r[3] - y_margin for r in rows], device=dev)
+
+    def __call__(
+        self,
+        env: "ManagerBasedEnv",
+        env_ids: torch.Tensor,
+        asset_cfg: SceneEntityCfg,
+        x_pos: float,
+        z_range: tuple[float, float],
+        y_margin: float,
+    ):
+        asset = env.scene[asset_cfg.name]
+        if env_ids is None:
+            env_ids = torch.arange(env.num_envs, device=env.device)
+        n = len(env_ids)
+        dev = env.device
+
+        z = torch.empty(n, device=dev).uniform_(*z_range)
+        idx = torch.clamp(
+            torch.searchsorted(self._z_hi, z, right=True), max=len(self._z_hi) - 1
+        )
+        y_lo, y_hi = self._y_min[idx], self._y_max[idx]
+        y = y_lo + torch.rand(n, device=dev) * (y_hi - y_lo)
+
+        pos = env.scene.env_origins[env_ids] + torch.stack(
+            [torch.full((n,), x_pos, device=dev), y, z], dim=-1
+        )
+        quat = asset.data.default_root_state[env_ids, 3:7]
+        asset.write_root_pose_to_sim(torch.cat([pos, quat], dim=-1), env_ids=env_ids)
+        asset.write_root_velocity_to_sim(
+            torch.zeros(n, 6, device=dev), env_ids=env_ids
+        )
+
+
+class randomize_weed_color(ManagerTermBase):
+    """Per-env diffuseColor jitter for the weed prop, resampled on reset.
+
+    `RigidObject` exposes no `.prims`, so the per-env weed prims are resolved
+    lazily by path pattern on first call and their `diffuseColor` shader
+    attrs cached. Keep `variation` small: the weed must stay inside the
+    (possibly widened) green HSV band or the target goes invisible to the
+    actor while the critic still sees ground truth.
+
+    If the cloner shared one material across envs (instanced spawn), every
+    env resolves to the same attr — the jitter then degrades gracefully to a
+    global per-reset jitter, which still decorrelates over time.
+    """
+
+    def __init__(self, cfg: "EventTermCfg", env: "ManagerBasedEnv"):
+        super().__init__(cfg, env)
+        self._attrs: list | None = None
+
+    def _resolve_attrs(self, env: "ManagerBasedEnv", asset_name: str) -> list:
+        import re
+
+        import isaaclab.sim as sim_utils
+
+        pattern = env.scene[asset_name].cfg.prim_path.format(ENV_REGEX_NS="/World/envs/env_.*")
+        prims = sim_utils.find_matching_prims(pattern)
+
+        def env_index(prim) -> int:
+            m = re.search(r"env_(\d+)", str(prim.GetPath()))
+            return int(m.group(1)) if m else 0
+
+        attrs = [None] * len(prims)
+        for prim in prims:
+            attrs[env_index(prim)] = _find_diffuse_color_attr(prim)
+        return attrs
+
+    def __call__(
+        self,
+        env: "ManagerBasedEnv",
+        env_ids: torch.Tensor,
+        asset_cfg: SceneEntityCfg,
+        base_color: tuple[float, float, float],
+        variation: float,
+    ):
+        if self._attrs is None:
+            self._attrs = self._resolve_attrs(env, asset_cfg.name)
+        if env_ids is None:
+            env_ids = torch.arange(env.num_envs, device=env.device)
+        for i in env_ids.tolist():
+            attr = self._attrs[i] if i < len(self._attrs) else None
+            if attr is not None:
+                attr.Set(_balanced_color_jitter(base_color, variation))
 
 
 class randomize_camera_pose(ManagerTermBase):
