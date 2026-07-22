@@ -16,6 +16,7 @@ from .events import (  # noqa: F401
     randomize_camera_pose,
     randomize_light,
     randomize_visual_color_global,
+    reset_weed_in_reachable_workspace,
 )
 from .rewards import (  # noqa: F401
     weed_pos_in_base,

@@ -84,6 +84,15 @@ WEED_SPAWN_Z_WORLD = WEED_HEIGHT_M
 # X is pinned: the 5-bar is planar and the EE only ever reaches x=0.071.
 WEED_X_BASE = 0.071
 
+# (y, z) region sampling — the training target space is the measured
+# trapezoidal reachable envelope, not a line: z uniform in
+# WEED_Z_RANGE_WORLD, then y uniform in the per-z interval from the
+# generated `workspace_table.py`, shrunk WEED_Y_SAFETY_MARGIN per side
+# (see mdp.reset_weed_in_reachable_workspace). Above ~0.13 the weed
+# floats over the mat, standing in for taller weeds.
+WEED_Z_RANGE_WORLD = (0.115, 0.25)
+WEED_Y_SAFETY_MARGIN = 0.02
+
 # Y sampling range — RE-MEASURED 2026-07-22 with the corrected ramped sweep
 # (quasi-static drive-target ramp from home + settle/working-branch filters;
 # scripts/check_workspace.py) inside the MIRRORED joint bounds Tamir recorded
@@ -97,6 +106,9 @@ WEED_X_BASE = 0.071
 # so the measured envelope ([-0.103, +0.143], "EE floor z=0.052") was ~4x too
 # small. Its comment block claiming the +Y/-Y asymmetry was an artifact of
 # the same bug.
+#
+# SUPERSEDED for training by the table-driven region sampling above (kept as
+# the reference canopy-band interval).
 WEED_Y_RANGE = (-0.42, 0.42)
 
 # Canopy height jitter, applied on top of WEED_SPAWN_Z_WORLD. Small and

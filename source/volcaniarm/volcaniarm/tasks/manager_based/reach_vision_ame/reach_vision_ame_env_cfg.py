@@ -43,6 +43,8 @@ from .base_env_cfg import (
     VolcaniarmReachVisionSceneCfg,
 )
 from . import mdp
+from . import workspace_table
+from .base_env_cfg import ELBOW_IN_RAD, ELBOW_OUT_RAD
 from .contract import (
     MASK_GROUP,
     MASK_H,
@@ -52,10 +54,9 @@ from .contract import (
     RENDER_H,
     RENDER_W,
     WEED_COLOR,
-    WEED_SPAWN_Z_WORLD,
     WEED_X_BASE,
-    WEED_Y_RANGE,
-    WEED_Z_JITTER,
+    WEED_Y_SAFETY_MARGIN,
+    WEED_Z_RANGE_WORLD,
 )
 
 ELBOW_JOINTS = ["volcaniarm_(left|right)_elbow_joint"]
@@ -245,40 +246,30 @@ class AmeEventCfg:
         },
     )
 
+    # Weed anywhere in the measured trapezoidal reachable (y,z) region —
+    # z uniform, y within the per-z table interval minus the safety margin.
     randomize_weed_pose = EventTerm(
-        func=mdp.reset_root_state_uniform,
+        func=mdp.reset_weed_in_reachable_workspace,
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("weed"),
-            "pose_range": {
-                "x": (WEED_X_BASE, WEED_X_BASE),
-                "y": WEED_Y_RANGE,
-                "z": (
-                    WEED_SPAWN_Z_WORLD + WEED_Z_JITTER[0],
-                    WEED_SPAWN_Z_WORLD + WEED_Z_JITTER[1],
-                ),
-            },
-            "velocity_range": {},
+            "x_pos": WEED_X_BASE,
+            "z_range": WEED_Z_RANGE_WORLD,
+            "y_margin": WEED_Y_SAFETY_MARGIN,
         },
     )
 
     # Mid-episode resample: ~3 reach attempts per 12 s episode instead of 1.
     resample_weed_pose = EventTerm(
-        func=mdp.reset_root_state_uniform,
+        func=mdp.reset_weed_in_reachable_workspace,
         mode="interval",
         interval_range_s=(4.0, 4.0),
         is_global_time=False,
         params={
             "asset_cfg": SceneEntityCfg("weed"),
-            "pose_range": {
-                "x": (WEED_X_BASE, WEED_X_BASE),
-                "y": WEED_Y_RANGE,
-                "z": (
-                    WEED_SPAWN_Z_WORLD + WEED_Z_JITTER[0],
-                    WEED_SPAWN_Z_WORLD + WEED_Z_JITTER[1],
-                ),
-            },
-            "velocity_range": {},
+            "x_pos": WEED_X_BASE,
+            "z_range": WEED_Z_RANGE_WORLD,
+            "y_margin": WEED_Y_SAFETY_MARGIN,
         },
     )
 
@@ -345,9 +336,21 @@ class VolcaniarmReachVisionAmeEnvCfg(VolcaniarmReachVisionEnvCfg):
 
     def __post_init__(self):
         super().__post_init__()
-        # Nothing to retarget: the inherited reward terms resolve their target
-        # through `weed_cfg`, which already defaults to SceneEntityCfg("weed"),
-        # and this scene names its target entity `weed`.
+        # The inherited reward terms resolve their target through `weed_cfg`
+        # (defaults to SceneEntityCfg("weed")); nothing to retarget. But the
+        # sampling table must have been generated under the SAME mirrored
+        # elbow bounds the reward enforces — a stale table silently trains
+        # on the wrong envelope.
+        expected_left = (-ELBOW_IN_RAD, ELBOW_OUT_RAD)
+        expected_right = (-ELBOW_OUT_RAD, ELBOW_IN_RAD)
+        for got, want, side in (
+            (workspace_table.ELBOW_BOUNDS_LEFT, expected_left, "left"),
+            (workspace_table.ELBOW_BOUNDS_RIGHT, expected_right, "right"),
+        ):
+            assert all(abs(g - w) < 1e-4 for g, w in zip(got, want)), (
+                f"workspace_table.py was generated at {side} elbow bounds {got} "
+                f"but the reward enforces {want} — regenerate it (see table header)"
+            )
 
 
 @configclass
