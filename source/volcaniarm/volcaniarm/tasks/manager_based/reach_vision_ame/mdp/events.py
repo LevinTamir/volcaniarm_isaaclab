@@ -15,11 +15,12 @@ from typing import TYPE_CHECKING
 import torch
 
 from isaaclab.assets import AssetBase
-from isaaclab.managers import SceneEntityCfg
+from isaaclab.managers import ManagerTermBase, SceneEntityCfg
 from isaaclab.utils import math as math_utils
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv
+    from isaaclab.managers import EventTermCfg
 
 
 def _balanced_color_jitter(base: tuple[float, float, float], variation: float) -> tuple[float, float, float]:
@@ -104,44 +105,62 @@ def randomize_light(
             color_attr.Set(color)
 
 
-def randomize_camera_pose(
-    env: "ManagerBasedEnv",
-    env_ids: torch.Tensor,
-    sensor_name: str,
-    pos_std: tuple[float, float, float],
-    rpy_std: tuple[float, float, float],
-):
-    """Jitter the camera's world pose per env, additively on each reset.
+class randomize_camera_pose(ManagerTermBase):
+    """Jitter the camera's world pose per env about its HOME pose on each reset.
 
-    Reads the affected envs' current camera world pose, adds small Gaussian
-    noise on translation (per-axis std `pos_std`, m) and rotation (per-axis
-    std `rpy_std`, rad) about the current frame, and writes back via
-    `set_world_poses(convention="world")`.
+    On the first call per env the current world pose is cached as the home
+    pose — at that point no jitter has ever been applied, and the camera's
+    parent chain (`Robot/camera_link`) is a fixed mount on a fixed-base
+    robot, so the home world pose is constant per env. Every reset then
+    writes `home ⊕ fresh noise` (translation: per-axis Gaussian std
+    `pos_std`, m; rotation: per-axis Gaussian std `rpy_std`, rad, composed
+    about the home frame) via `set_world_poses(convention="world")`.
 
-    The jitter accumulates across resets — over many resets the camera
-    drifts. For 30 Hz × 12 s episodes that's ~12k resets per env over a
-    1k-iter run; pos_std=1e-3 gives expected drift ~σ·√N ≈ 11 cm at the
-    end. Keep `pos_std` and `rpy_std` small. If drift becomes a problem,
-    track a per-env base pose at startup and recompose against the parent
-    body's world pose every reset (TODO).
+    Composing against home instead of the current pose is what keeps the
+    jitter from accumulating: the previous function form added noise to the
+    already-noised pose, which random-walked ~σ·√N over N resets.
     """
-    sensor = env.scene[sensor_name]
-    if env_ids is None:
-        env_ids = torch.arange(env.num_envs, device=env.device)
 
-    pos_w = sensor.data.pos_w[env_ids]
-    quat_w = sensor.data.quat_w_world[env_ids]
+    def __init__(self, cfg: "EventTermCfg", env: "ManagerBasedEnv"):
+        super().__init__(cfg, env)
+        self._home_pos: torch.Tensor | None = None
+        self._home_quat: torch.Tensor | None = None
+        self._captured = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
 
-    pos_std_t = torch.tensor(pos_std, device=env.device, dtype=pos_w.dtype)
-    rpy_std_t = torch.tensor(rpy_std, device=env.device, dtype=pos_w.dtype)
+    def __call__(
+        self,
+        env: "ManagerBasedEnv",
+        env_ids: torch.Tensor,
+        sensor_name: str,
+        pos_std: tuple[float, float, float],
+        rpy_std: tuple[float, float, float],
+    ):
+        sensor = env.scene[sensor_name]
+        if env_ids is None:
+            env_ids = torch.arange(env.num_envs, device=env.device)
 
-    pos_noise = torch.randn_like(pos_w) * pos_std_t
-    new_pos = pos_w + pos_noise
+        if self._home_pos is None:
+            self._home_pos = torch.zeros(env.num_envs, 3, device=env.device)
+            self._home_quat = torch.zeros(env.num_envs, 4, device=env.device)
 
-    rpy_noise = torch.randn(len(env_ids), 3, device=env.device, dtype=pos_w.dtype) * rpy_std_t
-    delta_quat = math_utils.quat_from_euler_xyz(
-        rpy_noise[:, 0], rpy_noise[:, 1], rpy_noise[:, 2]
-    )
-    new_quat = math_utils.quat_mul(quat_w, delta_quat)
+        fresh = env_ids[~self._captured[env_ids]]
+        if len(fresh) > 0:
+            self._home_pos[fresh] = sensor.data.pos_w[fresh]
+            self._home_quat[fresh] = sensor.data.quat_w_world[fresh]
+            self._captured[fresh] = True
 
-    sensor.set_world_poses(new_pos, new_quat, env_ids=env_ids, convention="world")
+        home_pos = self._home_pos[env_ids]
+        home_quat = self._home_quat[env_ids]
+
+        pos_std_t = torch.tensor(pos_std, device=env.device, dtype=home_pos.dtype)
+        rpy_std_t = torch.tensor(rpy_std, device=env.device, dtype=home_pos.dtype)
+
+        new_pos = home_pos + torch.randn_like(home_pos) * pos_std_t
+
+        rpy_noise = torch.randn(len(env_ids), 3, device=env.device, dtype=home_pos.dtype) * rpy_std_t
+        delta_quat = math_utils.quat_from_euler_xyz(
+            rpy_noise[:, 0], rpy_noise[:, 1], rpy_noise[:, 2]
+        )
+        new_quat = math_utils.quat_mul(home_quat, delta_quat)
+
+        sensor.set_world_poses(new_pos, new_quat, env_ids=env_ids, convention="world")
