@@ -237,7 +237,10 @@ class AmeEventCfg:
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=ELBOW_JOINTS),
-            "position_range": (-0.9, 0.9),
+            # Inside the tighter (outward, 45 deg) side of the mirrored
+            # joystick-measured elbow bounds, so spawns never start in the
+            # penalty band.
+            "position_range": (-0.75, 0.75),
             "velocity_range": (0.0, 0.0),
         },
     )

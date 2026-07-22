@@ -84,23 +84,20 @@ WEED_SPAWN_Z_WORLD = WEED_HEIGHT_M
 # X is pinned: the 5-bar is planar and the EE only ever reaches x=0.071.
 WEED_X_BASE = 0.071
 
-# Y sampling range, measured not assumed — see scripts/check_workspace.py.
-# The EE floor is z=0.052 m (the arm CANNOT reach the mat at any joint angle),
-# and the reachable Y span is height-dependent. In the 0.100-0.125 m band the
-# envelope is y in [-0.103, +0.143] within the reward's in-range elbow bound.
+# Y sampling range — RE-MEASURED 2026-07-22 with the corrected ramped sweep
+# (quasi-static drive-target ramp from home + settle/working-branch filters;
+# scripts/check_workspace.py) inside the MIRRORED joint bounds Tamir recorded
+# by joystick-driving the sim arm (elbows 70 deg in / 45 deg out, arms
+# -30..+85 deg mirrored — see base_env_cfg.py). At the canopy band
+# (z 0.100-0.150) the reachable envelope is y in [-0.45, +0.45], symmetric as
+# the mirrored bounds predict; this range keeps ~2-3 cm margin per side.
 #
-# ASYMMETRIC ON PURPOSE. The 5-bar reaches ~4 cm further in +Y than in -Y at
-# every height, so a symmetric +-0.10 put the negative extreme within 3 mm of
-# the boundary while leaving 4 cm of slack on the positive side — targets at
-# y=-0.10 were effectively at the edge of feasibility, which is what "the arm
-# struggles at the outer sides" looked like. These bounds keep ~2 cm of margin
-# at both ends.
-#
-# NOTE: the older `reach` / `reach_vision` tasks sample y in (-0.50, 0.50)
-# while the reachable envelope is only [-0.287, 0.299] — roughly 40% of their
-# targets were never reachable. Left as-is on purpose so their baselines still
-# describe what was actually trained.
-WEED_Y_RANGE = (-0.08, 0.12)
+# History: the pre-2026-07-22 value (-0.08, 0.12) came from a buggy sweep —
+# the settle steps let the position drives pull the elbows back toward home,
+# so the measured envelope ([-0.103, +0.143], "EE floor z=0.052") was ~4x too
+# small. Its comment block claiming the +Y/-Y asymmetry was an artifact of
+# the same bug.
+WEED_Y_RANGE = (-0.42, 0.42)
 
 # Canopy height jitter, applied on top of WEED_SPAWN_Z_WORLD. Small and
 # one-sided-upward: it stands in for weeds of slightly different size rather

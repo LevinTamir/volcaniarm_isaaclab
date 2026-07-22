@@ -34,6 +34,18 @@ WEED_X_BASE = 0.071
 WEED_Y_RANGE = (-0.50, 0.50)
 WEED_Z_RANGE = (-0.98, -0.78)
 
+# Joint-range reward bounds, MIRRORED left/right — measured 2026-07-22 by
+# joystick-driving the sim arm around the intended envelope and recording
+# /joint_states extents (ws scripts/record_joint_extents.py), then
+# symmetrising across the mirror pairs, +~3 deg margin, rounded to 5 deg.
+# Each elbow flexes further inward (70 deg) than outward (45 deg); the arms
+# mirror likewise — which is why the old single shared arm bound
+# (-90..+50 deg for BOTH arms) never fit: the parked pose itself violated it.
+ELBOW_IN_RAD = 1.2217304763960306  # 70 deg (inward flex)
+ELBOW_OUT_RAD = 0.7853981633974483  # 45 deg (outward flex)
+ARM_BIG_RAD = 1.4835298641951802  # 85 deg
+ARM_SMALL_RAD = 0.5235987755982988  # 30 deg
+
 # Image resolution — small enough that 512+ envs fit on one GPU,
 # large enough for ResNet18 ImageNet weights to be in distribution
 # (model expects ~224x224 but tolerates smaller; we accept that
@@ -222,26 +234,41 @@ class RewardsCfg:
             "std": 0.05,
         },
     )
-    elbow_pos_in_range = RewTerm(
+    # Four per-joint terms because the bounds are mirrored, not shared.
+    left_elbow_in_range = RewTerm(
         func=mdp.joint_pos_out_of_range,
         weight=-1.0,
         params={
-            "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=["volcaniarm_(left|right)_elbow_joint"]
-            ),
-            "low": -1.3089969389957472,
-            "high": 1.3089969389957472,
+            "asset_cfg": SceneEntityCfg("robot", joint_names=["volcaniarm_left_elbow_joint"]),
+            "low": -ELBOW_IN_RAD,
+            "high": ELBOW_OUT_RAD,
         },
     )
-    arm_pos_in_range = RewTerm(
+    right_elbow_in_range = RewTerm(
         func=mdp.joint_pos_out_of_range,
         weight=-1.0,
         params={
-            "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=["volcaniarm_(left|right)_arm_joint"]
-            ),
-            "low": -1.5707963267948966,
-            "high": 0.8726646259971648,
+            "asset_cfg": SceneEntityCfg("robot", joint_names=["volcaniarm_right_elbow_joint"]),
+            "low": -ELBOW_OUT_RAD,
+            "high": ELBOW_IN_RAD,
+        },
+    )
+    left_arm_in_range = RewTerm(
+        func=mdp.joint_pos_out_of_range,
+        weight=-1.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=["volcaniarm_left_arm_joint"]),
+            "low": -ARM_SMALL_RAD,
+            "high": ARM_BIG_RAD,
+        },
+    )
+    right_arm_in_range = RewTerm(
+        func=mdp.joint_pos_out_of_range,
+        weight=-1.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=["volcaniarm_right_arm_joint"]),
+            "low": -ARM_BIG_RAD,
+            "high": ARM_SMALL_RAD,
         },
     )
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.001)
