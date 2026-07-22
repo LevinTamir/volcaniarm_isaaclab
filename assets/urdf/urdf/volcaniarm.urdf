@@ -3,18 +3,6 @@
      volcaniarm.urdf.xacro - do not hand-edit. Edit the ws xacro and
      re-run:  python3 scripts/sync_urdf.py  -->
 <robot name="volcaniarm">
-  <material name="powder_red">
-    <color rgba="0.62 0.07 0.09 1.0" />
-  </material>
-  <material name="galvanized">
-    <color rgba="0.72 0.74 0.76 1.0" />
-  </material>
-  <material name="steel_black">
-    <color rgba="0.02 0.02 0.02 1.0" />
-  </material>
-  <material name="plastic_black">
-    <color rgba="0.04 0.04 0.04 1.0" />
-  </material>
   <link name="base_link">
     <inertial>
       <origin rpy="0 0 0" xyz="0.0033183 1.7612E-06 -0.24794" />
@@ -26,7 +14,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/base_link.STL" />
       </geometry>
-      <material name="powder_red">
+      <material name="">
         <color rgba="0.62 0.07 0.09 1.0" />
       </material>
     </visual>
@@ -48,7 +36,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/fl_table_leg_link.STL" />
       </geometry>
-      <material name="powder_red">
+      <material name="">
         <color rgba="0.62 0.07 0.09 1.0" />
       </material>
     </visual>
@@ -75,7 +63,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/fl_caster_wheel_mount_link.STL" />
       </geometry>
-      <material name="galvanized">
+      <material name="">
         <color rgba="0.72 0.74 0.76 1.0" />
       </material>
     </visual>
@@ -102,7 +90,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/fl_caster_wheel_link.STL" />
       </geometry>
-      <material name="galvanized">
+      <material name="">
         <color rgba="0.72 0.74 0.76 1.0" />
       </material>
     </visual>
@@ -129,7 +117,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/fr_table_leg_link.STL" />
       </geometry>
-      <material name="powder_red">
+      <material name="">
         <color rgba="0.62 0.07 0.09 1.0" />
       </material>
     </visual>
@@ -156,7 +144,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/fr_caster_wheel_mount_link.STL" />
       </geometry>
-      <material name="galvanized">
+      <material name="">
         <color rgba="0.72 0.74 0.76 1.0" />
       </material>
     </visual>
@@ -183,7 +171,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/fr_caster_wheel_link.STL" />
       </geometry>
-      <material name="galvanized">
+      <material name="">
         <color rgba="0.72 0.74 0.76 1.0" />
       </material>
     </visual>
@@ -210,7 +198,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/rl_table_leg_link.STL" />
       </geometry>
-      <material name="powder_red">
+      <material name="">
         <color rgba="0.62 0.07 0.09 1.0" />
       </material>
     </visual>
@@ -237,7 +225,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/rl_caster_wheel_mount_link.STL" />
       </geometry>
-      <material name="galvanized">
+      <material name="">
         <color rgba="0.72 0.74 0.76 1.0" />
       </material>
     </visual>
@@ -264,7 +252,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/rl_caster_wheel_link.STL" />
       </geometry>
-      <material name="galvanized">
+      <material name="">
         <color rgba="0.72 0.74 0.76 1.0" />
       </material>
     </visual>
@@ -291,7 +279,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/rr_table_leg_link.STL" />
       </geometry>
-      <material name="powder_red">
+      <material name="">
         <color rgba="0.62 0.07 0.09 1.0" />
       </material>
     </visual>
@@ -318,7 +306,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/rr_caster_wheel_mount_link.STL" />
       </geometry>
-      <material name="galvanized">
+      <material name="">
         <color rgba="0.72 0.74 0.76 1.0" />
       </material>
     </visual>
@@ -345,7 +333,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/rr_caster_wheel_link.STL" />
       </geometry>
-      <material name="galvanized">
+      <material name="">
         <color rgba="0.72 0.74 0.76 1.0" />
       </material>
     </visual>
@@ -372,7 +360,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/volcaniarm_base_link.STL" />
       </geometry>
-      <material name="steel_black">
+      <material name="">
         <color rgba="0.02 0.02 0.02 1.0" />
       </material>
     </visual>
@@ -399,7 +387,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/volcaniarm_left_elbow_link.STL" />
       </geometry>
-      <material name="galvanized">
+      <material name="">
         <color rgba="0.72 0.74 0.76 1.0" />
       </material>
     </visual>
@@ -429,7 +417,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/volcaniarm_left_arm_link.STL" />
       </geometry>
-      <material name="galvanized">
+      <material name="">
         <color rgba="0.72 0.74 0.76 1.0" />
       </material>
     </visual>
@@ -471,7 +459,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/volcaniarm_right_elbow_link.STL" />
       </geometry>
-      <material name="galvanized">
+      <material name="">
         <color rgba="0.72 0.74 0.76 1.0" />
       </material>
     </visual>
@@ -501,7 +489,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/volcaniarm_right_arm_link.STL" />
       </geometry>
-      <material name="galvanized">
+      <material name="">
         <color rgba="0.72 0.74 0.76 1.0" />
       </material>
     </visual>
@@ -543,7 +531,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/camera_mount_linear_link.STL" />
       </geometry>
-      <material name="galvanized">
+      <material name="">
         <color rgba="0.72 0.74 0.76 1.0" />
       </material>
     </visual>
@@ -570,7 +558,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/camera_mount_rev_link.STL" />
       </geometry>
-      <material name="plastic_black">
+      <material name="">
         <color rgba="0.04 0.04 0.04 1.0" />
       </material>
     </visual>
@@ -597,7 +585,7 @@
       <geometry>
         <mesh filename="/home/tamir/projects/volcaniarm_isaaclab/assets/urdf/meshes/camera_link.STL" />
       </geometry>
-      <material name="galvanized">
+      <material name="">
         <color rgba="0.72 0.74 0.76 1.0" />
       </material>
     </visual>
