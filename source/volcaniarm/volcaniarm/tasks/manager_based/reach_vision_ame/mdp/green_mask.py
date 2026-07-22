@@ -34,7 +34,7 @@ from ..mask_ops import (  # noqa: F401  -- re-exported for existing importers
     isolate_blob,
     rgb_to_green_mask,
 )
-from ..contract import GREEN_JITTER
+from ..contract import CAM_H, CAM_W, GREEN_JITTER
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv
@@ -84,6 +84,18 @@ class green_mask(ManagerTermBase):
         jitter: dict | None = None,
     ) -> torch.Tensor:
         rgb = env.scene.sensors[self._sensor_name].data.output["rgb"]
+        # The camera renders at the D435i aspect (RENDER_HxRENDER_W); squash
+        # to the CAM_HxCAM_W contract with the same non-uniform bilinear
+        # resize the deployed controller applies to the real 848x480 stream
+        # (cv::resize INTER_LINEAR). Train-time pixels == deploy-time pixels.
+        if tuple(rgb.shape[1:3]) != (CAM_H, CAM_W):
+            x = rgb.permute(0, 3, 1, 2).float()
+            if rgb.dtype == torch.uint8:
+                x = x / 255.0
+            x = torch.nn.functional.interpolate(
+                x, size=(CAM_H, CAM_W), mode="bilinear", align_corners=False
+            )
+            rgb = x.permute(0, 2, 3, 1)
         mask = rgb_to_green_mask(
             rgb, softness=self._softness, out_hw=self._out_hw, **self._thr
         )

@@ -17,6 +17,15 @@ anywhere. One definition kills that whole failure mode.
 # controller resizes incoming frames to exactly this before inference.
 CAM_H, CAM_W = 96, 96
 
+# Training-camera RENDER resolution — the RealSense D435i color aspect
+# (848x480 -> 96x170 at CAM_H rows). The real controller squashes 848x480
+# down to CAM_HxCAM_W (cv::resize, non-uniform); training renders at the
+# same aspect and squashes identically in the green_mask obs term, so the
+# policy sees the same anamorphic geometry in sim as on the robot. The
+# camera FOV (69 x ~42.5 deg, set in the env cfg) matches the D435i color
+# sensor for the same reason.
+RENDER_H, RENDER_W = 96, 170
+
 # Deployment-facing mask math and its thresholds live in `mask_ops`, which
 # imports torch and nothing else so it can run against real camera frames
 # without launching Isaac. Re-exported here so consumers keep treating this

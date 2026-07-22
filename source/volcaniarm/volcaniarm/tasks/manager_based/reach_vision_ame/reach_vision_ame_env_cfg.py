@@ -49,6 +49,8 @@ from .contract import (
     MASK_W,
     MAT_COLOR,
     MAT_ROUGHNESS,
+    RENDER_H,
+    RENDER_W,
     WEED_COLOR,
     WEED_SPAWN_Z_WORLD,
     WEED_X_BASE,
@@ -124,6 +126,24 @@ class VolcaniarmReachVisionAmeSceneCfg(VolcaniarmReachVisionSceneCfg):
         # absolute env-local coordinates, which is what they look like.
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
     )
+
+    def __post_init__(self):
+        parent_post_init = getattr(super(), "__post_init__", None)
+        if parent_post_init is not None:
+            parent_post_init()
+        # Override the inherited base_camera with RealSense D435i color-sensor
+        # geometry: render at the 848x480 aspect (RENDER_HxRENDER_W), HFOV 69°
+        # (hAperture = 2*18.14721*tan(34.5°)), VFOV ~42.5° derived from the
+        # aspect. The green_mask obs term then squashes the frame to
+        # CAM_HxCAM_W exactly like the deployed controller squashes the real
+        # 848x480 stream, so train-time and deploy-time pixels agree. Clip
+        # mirrors the D435 usable depth band. Same numbers as
+        # scripts/add_ros2_graph.py and volcaniarm_gazebo.xacro.
+        self.base_camera.width = RENDER_W
+        self.base_camera.height = RENDER_H
+        self.base_camera.spawn.horizontal_aperture = 24.9438
+        self.base_camera.spawn.vertical_aperture = 14.1191
+        self.base_camera.spawn.clipping_range = (0.195, 10.0)
 
 
 ##
