@@ -28,6 +28,7 @@ from pathlib import Path
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg, RigidObjectCfg
+from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
@@ -316,6 +317,30 @@ class AmeEventCfg:
     )
 
 
+@configclass
+class AmeCurriculumCfg:
+    """Spatial curriculum: narrow validated band -> full measured table.
+
+    The full region from a cold start stalls in the park-at-centroid optimum
+    (runs 2026-07-22_16-55-00 / 17-14-34). y_scale=0.25 collapses the 0.115
+    band to ~[-0.04, 0.16] — essentially the old WEED_Y_RANGE line that
+    learned in ~50 iterations — then the region grows to the full table
+    between iterations 100 and 600.
+    """
+
+    expand_weed_region = CurrTerm(
+        func=mdp.expand_weed_region,
+        params={
+            "start_iter": 100,
+            "end_iter": 600,
+            "z_range_start": (0.115, 0.145),
+            "z_range_end": WEED_Z_RANGE_WORLD,
+            "y_scale_start": 0.25,
+            "y_scale_end": 1.0,
+        },
+    )
+
+
 ##
 # Environment
 ##
@@ -331,6 +356,7 @@ class VolcaniarmReachVisionAmeEnvCfg(VolcaniarmReachVisionEnvCfg):
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
     events: AmeEventCfg = AmeEventCfg()
+    curriculum: AmeCurriculumCfg = AmeCurriculumCfg()
 
     def __post_init__(self):
         super().__post_init__()
@@ -353,3 +379,6 @@ class VolcaniarmReachVisionAmeEnvCfg_PLAY(VolcaniarmReachVisionAmeEnvCfg):
         self.scene.env_spacing = 2.5
         self.observations.policy.enable_corruption = False
         self.observations.mask.enable_corruption = False
+        # Evaluate over the FULL region — a fresh env restarts
+        # common_step_counter at 0, which would re-narrow the sampling.
+        self.curriculum.expand_weed_region = None

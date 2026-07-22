@@ -265,7 +265,10 @@ class RewardsCfg:
             "high": ARM_IN_RANGE_RAD[1],
         },
     )
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.001)
+    # 10x the original -0.001, which contributed ~nothing: stepper drives
+    # want smooth targets, and the deployed checkpoint is stage 2's, so the
+    # smoothness cost must be present in the shared stack, not stage-1-only.
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.01)
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
         weight=-0.001,

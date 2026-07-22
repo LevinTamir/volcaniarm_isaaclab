@@ -86,6 +86,10 @@ class VolcaniarmReachVisionAmeStage2EnvCfg(VolcaniarmReachVisionAmeEnvCfg):
         self.observations.mask.image.params["jitter"] = GREEN_JITTER_STAGE2
         self.observations.mask.image.params["dropout"] = MASK_DROPOUT_STAGE2
         self.observations.mask.image.noise = Unoise(n_min=-0.08, n_max=0.08)
+        # No spatial curriculum here: common_step_counter restarts at 0 on
+        # resume, so the inherited term would re-narrow the region under
+        # heavy DR. Stage 2 fine-tunes on the FULL table from iteration 0.
+        self.curriculum.expand_weed_region = None
 
 
 @configclass

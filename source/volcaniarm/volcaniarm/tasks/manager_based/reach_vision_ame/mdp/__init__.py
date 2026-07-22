@@ -12,6 +12,7 @@ camera/light/color randomization events (migrated here from the retired
 from isaaclab.envs.mdp import *  # noqa: F401, F403
 
 from ...reach.mdp.rewards import joint_pos_out_of_range  # noqa: F401
+from .curriculums import expand_weed_region  # noqa: F401
 from .events import (  # noqa: F401
     randomize_camera_pose,
     randomize_light,

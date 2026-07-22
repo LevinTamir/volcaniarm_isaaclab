@@ -154,6 +154,7 @@ class reset_weed_in_reachable_workspace(ManagerTermBase):
         x_pos: float,
         z_range: tuple[float, float],
         y_margin: float,
+        y_scale: float = 1.0,
     ):
         asset = env.scene[asset_cfg.name]
         if env_ids is None:
@@ -166,6 +167,13 @@ class reset_weed_in_reachable_workspace(ManagerTermBase):
             torch.searchsorted(self._z_hi, z, right=True), max=len(self._z_hi) - 1
         )
         y_lo, y_hi = self._y_min[idx], self._y_max[idx]
+        if y_scale < 1.0:
+            # Curriculum hook: shrink each row's interval toward its centre.
+            # z_range and y_scale are read per call, so the curriculum term
+            # can widen them at runtime without touching the baked tensors.
+            c = 0.5 * (y_lo + y_hi)
+            y_lo = c - (c - y_lo) * y_scale
+            y_hi = c + (y_hi - c) * y_scale
         y = y_lo + torch.rand(n, device=dev) * (y_hi - y_lo)
 
         pos = env.scene.env_origins[env_ids] + torch.stack(
