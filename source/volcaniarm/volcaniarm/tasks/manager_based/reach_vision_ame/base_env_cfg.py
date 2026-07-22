@@ -1,22 +1,15 @@
 # Copyright (c) 2026, Tamir Levin.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Vision reach task for the volcaniarm 5-bar planar 2-DOF arm.
+"""Base scene/env cfgs shared by the AME vision reach task.
 
-Differs from `reach`:
-- A green-cylinder weed surrogate is spawned per env at a random
-  (Y, Z) inside the existing reachable workspace (X is fixed by the
-  planar mechanism).
-- A downward-looking TiledCamera mounted on `volcaniarm_base_link`
-  produces RGB at the training resolution.
-- Asymmetric observations: actor sees ResNet18 features + joint_pos_rel
-  + last_action; critic adds the privileged weed position in base
-  frame.
-- Reward is Y-Z distance from `left_ee_link` to the weed root_pos_w
-  (X error ignored — planar mechanism cannot control X).
-- Floor uses concrete-grey colour matching `scripts/build_lab.py`
-  FLOOR_COLOR (0.72, 0.70, 0.68) so the visual gap to the real lab
-  floor is small.
+Migrated verbatim from the retired `reach_vision` task (the ResNet18
+baseline that AME superseded): the scene (robot, camera rig, lights,
+ground), actions, rewards and terminations carried over unchanged; the
+old task's observations/events did not (AME has its own).
+
+The class names keep the `ReachVision` spelling so checkpoints and logs
+that reference cfg class paths stay readable.
 """
 
 import math
@@ -24,9 +17,6 @@ import math
 import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
-from isaaclab.managers import EventTermCfg as EventTerm
-from isaaclab.managers import ObservationGroupCfg as ObsGroup
-from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
@@ -34,11 +24,9 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import TiledCameraCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
-from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from ..reach.volcaniarm_cfg import VOLCANIARM_CFG
 from . import mdp
-
 
 # Workspace bounds in `volcaniarm_base_link` frame (base sits at world
 # z=0.98). Identical to the validated state-based task ranges.
@@ -104,7 +92,6 @@ def _quat_from_rpy(rpy: tuple[float, float, float]) -> tuple[float, float, float
 
 
 CAMERA_OFFSET_QUAT = _quat_from_rpy(CAMERA_OFFSET_RPY)
-
 
 ##
 # Scene definition
@@ -194,11 +181,9 @@ class VolcaniarmReachVisionSceneCfg(InteractiveSceneCfg):
         height=IMG_H,
     )
 
-
 ##
 # MDP settings
 ##
-
 
 @configclass
 class ActionsCfg:
@@ -209,174 +194,6 @@ class ActionsCfg:
         joint_names=["volcaniarm_(left|right)_elbow_joint"],
         scale=0.5,
         use_default_offset=True,
-    )
-
-
-@configclass
-class ObservationsCfg:
-    """Asymmetric obs: actor=features+proprio, critic adds weed pose.
-
-    rsl_rl's ActorCritic concatenates all groups inside the "policy"
-    and "critic" lists; both must be flat 1D per-term so the MLP can
-    ingest. ResNet18 features are 1000-dim (ImageNet logits) — that's
-    what the IsaacLab stdlib's `image_features` returns when called
-    with model_name="resnet18".
-    """
-
-    @configclass
-    class PolicyCfg(ObsGroup):
-        joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
-            noise=Unoise(n_min=-0.01, n_max=0.01),
-            params={
-                "asset_cfg": SceneEntityCfg(
-                    "robot", joint_names=["volcaniarm_(left|right)_elbow_joint"]
-                )
-            },
-        )
-        actions = ObsTerm(func=mdp.last_action)
-        image_features = ObsTerm(
-            func=mdp.image_features,
-            params={
-                "sensor_cfg": SceneEntityCfg("base_camera"),
-                "data_type": "rgb",
-                "model_name": "resnet18",
-            },
-        )
-
-        def __post_init__(self):
-            self.enable_corruption = True
-            self.concatenate_terms = True
-
-    @configclass
-    class CriticCfg(ObsGroup):
-        joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
-            params={
-                "asset_cfg": SceneEntityCfg(
-                    "robot", joint_names=["volcaniarm_(left|right)_elbow_joint"]
-                )
-            },
-        )
-        actions = ObsTerm(func=mdp.last_action)
-        image_features = ObsTerm(
-            func=mdp.image_features,
-            params={
-                "sensor_cfg": SceneEntityCfg("base_camera"),
-                "data_type": "rgb",
-                "model_name": "resnet18",
-            },
-        )
-        weed_pos_b = ObsTerm(func=mdp.weed_pos_in_base)
-
-        def __post_init__(self):
-            self.enable_corruption = False
-            self.concatenate_terms = True
-
-    policy: PolicyCfg = PolicyCfg()
-    critic: CriticCfg = CriticCfg()
-
-
-@configclass
-class EventCfg:
-    """Reset + interval events: joint reset, weed pose, lighting, colour, camera DR."""
-
-    reset_robot_joints = EventTerm(
-        func=mdp.reset_joints_by_offset,
-        mode="reset",
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot", joint_names=["volcaniarm_(left|right)_elbow_joint"]
-            ),
-            "position_range": (-0.9, 0.9),
-            "velocity_range": (0.0, 0.0),
-        },
-    )
-
-    # Weed: random (Y, Z) inside the workspace; X pinned at the
-    # planar-arm reachable plane. Pose is in WORLD frame, so add the
-    # base-link world z (0.98) to the base-frame Z range.
-    randomize_weed_pose = EventTerm(
-        func=mdp.reset_root_state_uniform,
-        mode="reset",
-        params={
-            "asset_cfg": SceneEntityCfg("weed"),
-            "pose_range": {
-                "x": (WEED_X_BASE, WEED_X_BASE),
-                "y": WEED_Y_RANGE,
-                "z": (0.98 + WEED_Z_RANGE[0], 0.98 + WEED_Z_RANGE[1]),
-            },
-            "velocity_range": {},
-        },
-    )
-
-    # Mid-episode weed resample — gives ~3 reach attempts per 12 s episode
-    # instead of 1, tripling the on-policy reaching signal per env per iter.
-    resample_weed_pose = EventTerm(
-        func=mdp.reset_root_state_uniform,
-        mode="interval",
-        interval_range_s=(4.0, 4.0),
-        is_global_time=False,
-        params={
-            "asset_cfg": SceneEntityCfg("weed"),
-            "pose_range": {
-                "x": (WEED_X_BASE, WEED_X_BASE),
-                "y": WEED_Y_RANGE,
-                "z": (0.98 + WEED_Z_RANGE[0], 0.98 + WEED_Z_RANGE[1]),
-            },
-            "velocity_range": {},
-        },
-    )
-
-    # Floor color jitter — small variation around the concrete-grey base.
-    # Global asset (one prim shared across envs); the change applies to all
-    # envs from the next render onward.
-    randomize_floor_color = EventTerm(
-        func=mdp.randomize_visual_color_global,
-        mode="reset",
-        params={
-            "asset_cfg": SceneEntityCfg("ground"),
-            "base_color": FLOOR_COLOR,
-            "variation": 0.05,
-        },
-    )
-
-    # Dome light: ±25% intensity, ±10% balanced color drift.
-    randomize_dome = EventTerm(
-        func=mdp.randomize_light,
-        mode="reset",
-        params={
-            "asset_cfg": SceneEntityCfg("dome"),
-            "intensity_range": (320.0, 480.0),
-            "color_base": (0.75, 0.75, 0.75),
-            "color_variation": 0.10,
-        },
-    )
-
-    # Sun light: ±25% intensity, ±10% balanced color drift (warm bias kept).
-    randomize_sun = EventTerm(
-        func=mdp.randomize_light,
-        mode="reset",
-        params={
-            "asset_cfg": SceneEntityCfg("sun"),
-            "intensity_range": (900.0, 1500.0),
-            "color_base": (1.0, 1.0, 0.95),
-            "color_variation": 0.10,
-        },
-    )
-
-    # Camera pose jitter — per-env, additive on each reset. Small std
-    # values keep the accumulated drift bounded over a 3000-iter run
-    # (drift ≈ σ·√N_resets; with σ_pos=1 mm, σ_rpy≈0.17°, that's ~2 cm
-    # and ~3° by training end — within plausible mounting tolerance.)
-    randomize_camera_pose = EventTerm(
-        func=mdp.randomize_camera_pose,
-        mode="reset",
-        params={
-            "sensor_name": "base_camera",
-            "pos_std": (0.001, 0.001, 0.001),
-            "rpy_std": (0.003, 0.003, 0.003),
-        },
     )
 
 
@@ -434,7 +251,6 @@ class RewardsCfg:
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
 
-
 @configclass
 class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
@@ -444,7 +260,6 @@ class TerminationsCfg:
 # Environment configuration
 ##
 
-
 @configclass
 class VolcaniarmReachVisionEnvCfg(ManagerBasedRLEnvCfg):
     # Image rendering is the bottleneck — drop env count vs the
@@ -452,11 +267,13 @@ class VolcaniarmReachVisionEnvCfg(ManagerBasedRLEnvCfg):
     scene: VolcaniarmReachVisionSceneCfg = VolcaniarmReachVisionSceneCfg(
         num_envs=512, env_spacing=2.5
     )
-    observations: ObservationsCfg = ObservationsCfg()
+    # observations/events are deliberately NOT set here: the retired
+    # reach_vision task's ResNet18 observations and its EventCfg were not
+    # migrated. The AME subclass supplies its own (AmeObservationsCfg /
+    # AmeEventCfg).
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
-    events: EventCfg = EventCfg()
 
     def __post_init__(self):
         self.decimation = 2
@@ -465,11 +282,3 @@ class VolcaniarmReachVisionEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.dt = 1.0 / 60.0
         self.sim.render_interval = self.decimation
 
-
-@configclass
-class VolcaniarmReachVisionEnvCfg_PLAY(VolcaniarmReachVisionEnvCfg):
-    def __post_init__(self):
-        super().__post_init__()
-        self.scene.num_envs = 16
-        self.scene.env_spacing = 2.5
-        self.observations.policy.enable_corruption = False

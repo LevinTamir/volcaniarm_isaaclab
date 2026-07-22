@@ -3,12 +3,23 @@
 
 """MDP terms for the AME vision reach task.
 
-Rewards and events are reused verbatim from `reach_vision` by import — the
-task differs in how the image is encoded, not in what it is rewarded for.
-Keeping them shared is what makes the head-to-head comparison against the
-`reach_vision` baseline meaningful.
+Re-exports the IsaacLab stdlib mdp plus the shared joint-range penalty
+from the state-based reach task; adds the weed-pose tracking rewards and
+camera/light/color randomization events (migrated here from the retired
+`reach_vision` ResNet18 baseline) and the green-mask observation.
 """
 
-from ...reach_vision.mdp import *  # noqa: F401, F403
+from isaaclab.envs.mdp import *  # noqa: F401, F403
 
+from ...reach.mdp.rewards import joint_pos_out_of_range  # noqa: F401
+from .events import (  # noqa: F401
+    randomize_camera_pose,
+    randomize_light,
+    randomize_visual_color_global,
+)
+from .rewards import (  # noqa: F401
+    weed_pos_in_base,
+    position_weed_error,
+    position_weed_error_tanh,
+)
 from .green_mask import green_mask, isolate_blob, rgb_to_green_mask  # noqa: F401

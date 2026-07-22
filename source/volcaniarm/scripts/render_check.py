@@ -9,7 +9,7 @@ camera offset / FOV / weed visibility can be verified before training.
 
 Usage:
     isaaclab.sh -p source/volcaniarm/scripts/render_check.py \\
-        --task Volcaniarm-Reach-Vision-v0 [--num_envs 4]
+        --task Volcaniarm-Reach-Vision-AME-v0 [--num_envs 4]
 """
 
 import argparse
@@ -19,7 +19,7 @@ import sys
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Dump base-camera frames for visual inspection.")
-parser.add_argument("--task", type=str, default="Volcaniarm-Reach-Vision-v0", help="Task to instantiate.")
+parser.add_argument("--task", type=str, default="Volcaniarm-Reach-Vision-AME-v0", help="Task to instantiate.")
 parser.add_argument("--num_envs", type=int, default=4, help="Number of envs (one PNG per env).")
 parser.add_argument(
     "--sensor", type=str, default="base_camera", help="Scene sensor name to dump."
