@@ -109,3 +109,21 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         desired_kl=0.01,
         max_grad_norm=1.0,
     )
+
+
+@configclass
+class Stage2PPORunnerCfg(PPORunnerCfg):
+    """Stage-2 fine-tuning runner (task id -v1).
+
+    `experiment_name` is inherited UNCHANGED on purpose: both stages must
+    share logs/reach_vision_ame/rsl_rl/volcaniarm_reach_vision_ame/ so
+    `--resume --load_run <stage1_run>` (and play/export checkpoint
+    discovery) can see stage-1 runs. The run_name suffix is what tells the
+    stages apart in TensorBoard. The DR shock will spike KL early on and
+    the adaptive schedule will cut the LR — expect ~20 noisy iterations; if
+    the policy visibly collapses instead, drop algorithm.learning_rate to
+    1e-4 here.
+    """
+
+    max_iterations = 1500
+    run_name = "stage2_dr"
