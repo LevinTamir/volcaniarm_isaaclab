@@ -125,13 +125,21 @@ def strip_blocks(root: ET.Element) -> None:
 
 
 def remove_link(root: ET.Element, name: str) -> None:
+    """Remove a link and every joint touching it (either side).
+
+    Parent-side matters: stripping `world` must also take `world_to_base`
+    (whose *parent* is world) with it — a joint referencing a nonexistent
+    link crashes the Isaac URDF parser with a bare C++ `map::at`.
+    """
     for link in root.findall("link"):
         if link.get("name") == name:
             root.remove(link)
     for joint in root.findall("joint"):
-        child = joint.find("child")
-        if child is not None and child.get("link") == name:
-            root.remove(joint)
+        for side in ("child", "parent"):
+            el = joint.find(side)
+            if el is not None and el.get("link") == name:
+                root.remove(joint)
+                break
 
 
 def joint_by_name(root: ET.Element, name: str) -> ET.Element:
@@ -233,6 +241,13 @@ def verify(root: ET.Element) -> None:
     for jname in ("camera_mount_linear_joint", "camera_mount_rev_joint"):
         if joint_by_name(root, jname).get("type") != "fixed":
             die(f"{jname} must be fixed in the ws xacro")
+    # Every joint must reference existing links — a dangling reference
+    # crashes the Isaac URDF parser with an opaque C++ map::at.
+    for joint in root.findall("joint"):
+        for side in ("parent", "child"):
+            ref = joint.find(side).get("link")
+            if ref not in links:
+                die(f"joint {joint.get('name')!r} references missing link {ref!r}")
     for mesh in root.iter("mesh"):
         if not Path(mesh.get("filename")).exists():
             die(f"mesh missing on disk: {mesh.get('filename')}")

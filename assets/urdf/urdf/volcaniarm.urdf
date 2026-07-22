@@ -15,11 +15,6 @@
   <material name="plastic_black">
     <color rgba="0.04 0.04 0.04 1.0" />
   </material>
-  <joint name="world_to_base" type="fixed">
-    <origin rpy="0 0 3.14159" xyz="0 0 0.98" />
-    <parent link="world" />
-    <child link="base_link" />
-  </joint>
   <link name="base_link">
     <inertial>
       <origin rpy="0 0 0" xyz="0.0033183 1.7612E-06 -0.24794" />
