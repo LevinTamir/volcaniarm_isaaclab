@@ -213,6 +213,20 @@ class RewardsCfg:
         weight=-0.2,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"])},
     )
+    # Mid-range gradient bridge. The table-driven task samples targets up to
+    # ~1 m apart; beyond ~0.5 m the std-0.3/0.05 terms are nearly flat and
+    # the first widened-workspace run (2026-07-22_16-55-00) stalled in the
+    # park-at-centroid optimum with rising action noise. std 0.6 keeps
+    # usable slope over the whole span, weight below the broad term so
+    # near-target precision ordering is unchanged.
+    weed_position_tracking_tanh_mid = RewTerm(
+        func=mdp.position_weed_error_tanh,
+        weight=0.75,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"]),
+            "std": 0.6,
+        },
+    )
     weed_position_tracking_tanh_broad = RewTerm(
         func=mdp.position_weed_error_tanh,
         weight=1.0,

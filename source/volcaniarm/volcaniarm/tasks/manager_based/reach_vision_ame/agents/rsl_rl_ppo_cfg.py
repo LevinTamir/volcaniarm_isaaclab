@@ -98,7 +98,11 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.01,
+        # 0.005, halved from 0.01: on the widened workspace the far-field
+        # gradient is shallow and the larger bonus inflated exploration
+        # noise (0.3 -> 0.7 by iter 150) instead of letting it anneal —
+        # the visible failure mode of the first stalled run.
+        entropy_coef=0.005,
         num_learning_epochs=5,
         # 8 rather than the baseline's 4: the AME encoder's activations scale
         # with token count, so smaller minibatches keep peak memory down.
