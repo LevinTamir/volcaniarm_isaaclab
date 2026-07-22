@@ -34,6 +34,23 @@ parser.add_argument(
 )
 parser.add_argument("--report", default=None, help="write report here instead of stdout")
 parser.add_argument(
+    "--limit-left",
+    type=float,
+    nargs=2,
+    default=None,
+    metavar=("LO", "HI"),
+    help="asymmetric left-elbow sweep bounds (rad); overrides --limit for that joint. "
+    "Use for joystick-recorded extents, which are never symmetric.",
+)
+parser.add_argument(
+    "--limit-right",
+    type=float,
+    nargs=2,
+    default=None,
+    metavar=("LO", "HI"),
+    help="asymmetric right-elbow sweep bounds (rad); overrides --limit, see --limit-left.",
+)
+parser.add_argument(
     "--settle-tol",
     type=float,
     default=0.02,
@@ -85,9 +102,12 @@ import torch
 import volcaniarm.tasks  # noqa: F401  -- registers the envs
 from isaaclab_tasks.utils import parse_env_cfg
 
-# Elbow limits used by the reward's `elbow_pos_in_range` term (±75°).
-# Set from --limit; default is the reward's in-range bound (+-75 deg).
+# Elbow sweep bounds. Symmetric ±--limit by default (the reward's in-range
+# bound, ±75°); --limit-left/--limit-right override per joint for
+# joystick-recorded extents, which are never symmetric.
 ELBOW_LIMIT = args_cli.limit
+LEFT_BOUNDS = tuple(args_cli.limit_left) if args_cli.limit_left else (-ELBOW_LIMIT, ELBOW_LIMIT)
+RIGHT_BOUNDS = tuple(args_cli.limit_right) if args_cli.limit_right else (-ELBOW_LIMIT, ELBOW_LIMIT)
 BASE_Z_WORLD = 0.98
 
 
@@ -106,9 +126,8 @@ def main() -> None:
     dev = env.device
 
     # Cartesian product of the two elbow angles.
-    sweep = torch.linspace(-ELBOW_LIMIT, ELBOW_LIMIT, n, device=dev)
-    left = sweep.repeat_interleave(n)
-    right = sweep.repeat(n)
+    left = torch.linspace(*LEFT_BOUNDS, n, device=dev).repeat_interleave(n)
+    right = torch.linspace(*RIGHT_BOUNDS, n, device=dev).repeat(n)
 
     elbow_ids, elbow_names = robot.find_joints(["volcaniarm_(left|right)_elbow_joint"])
     # find_joints returns sim order; map explicitly so left/right aren't swapped.
@@ -167,7 +186,9 @@ def main() -> None:
     arm_q = arm_all[valid]
 
     lines = [
-        f"task={args_cli.task}  samples={n*n}  elbow range=+-{ELBOW_LIMIT:.4f} rad",
+        f"task={args_cli.task}  samples={n*n}  "
+        f"elbow L=[{LEFT_BOUNDS[0]:.4f}, {LEFT_BOUNDS[1]:.4f}] "
+        f"R=[{RIGHT_BOUNDS[0]:.4f}, {RIGHT_BOUNDS[1]:.4f}] rad",
         f"valid: {n_valid}/{n*n} ({100.0*n_valid/(n*n):.1f}%)  "
         f"[settled<{args_cli.settle_tol:.3f} rad: {int(settled.sum())}; "
         f"arm on-branch ({args_cli.arm_low:.3f},{args_cli.arm_high:.3f}): "
