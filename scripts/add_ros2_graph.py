@@ -75,11 +75,10 @@ CAM_FRAME = "camera_color_optical_frame"
 CAM_WIDTH = 640
 CAM_HEIGHT = 480
 GROUND_Z = 0.0           # floor at world z=0
-# Cart geometry bbox min is z=-0.98 in base_link frame (caster-wheel bottom).
-# Lifting base_link by a small extra ~wheel-radius (0.04 m) leaves a visible
-# clearance under the wheels rather than a zero-overlap contact, which reads
-# as "sitting on the floor" instead of "sunk into it".
-ROBOT_BASE_Z = 1.02
+# The robot lift is measured, not hardcoded: after referencing the robot,
+# we compute its bbox and raise base_link by exactly -bbox_min_z so the
+# caster-wheel bottoms sit at world z=0 (previously a hardcoded 1.02 left
+# the wheels hovering 4 cm above the floor/mat).
 
 
 def main() -> None:
@@ -107,14 +106,23 @@ def main() -> None:
     _app.update()
     if not stage.GetPrimAtPath(ROBOT_PATH).IsValid():
         raise RuntimeError(f"Reference to {BASE_USD.name} did not resolve at {ROBOT_PATH}")
-    # Cart wheels hang ~0.98 m below base_link; lifting base_link by that
-    # amount puts the wheels on the ground plane at z=0. Referenced robot
-    # already carries translate/orient/scale ops, and `orient` is a quat
-    # (not rotateXYZ), so UsdGeom.XformCommonAPI silently no-ops here.
-    # Append a named translate op instead — it composes outside the
-    # reference's identity ops and actually takes effect.
+    # Cart wheels hang below base_link; lift base_link by exactly the
+    # measured bbox depth so the wheel bottoms land on the ground at z=0.
+    # Measured (not hardcoded) for the same reason build_lab.py measures
+    # the weed USD height — stale constants drift from the asset.
+    bbox_cache = UsdGeom.BBoxCache(
+        Usd.TimeCode.Default(), ["default", "render", "proxy", "guide"])
+    bbox = bbox_cache.ComputeWorldBound(
+        stage.GetPrimAtPath(ROBOT_PATH)).ComputeAlignedRange()
+    robot_base_z = -bbox.GetMin()[2]
+    print(f"[add_ros2_graph] measured wheel-bottom depth: {robot_base_z:.4f} m",
+          flush=True)
+    # Referenced robot already carries translate/orient/scale ops, and
+    # `orient` is a quat (not rotateXYZ), so UsdGeom.XformCommonAPI
+    # silently no-ops here. Append a named translate op instead — it
+    # composes outside the reference's identity ops and takes effect.
     raise_op = UsdGeom.Xformable(robot_xform).AddTranslateOp(opSuffix="raise")
-    raise_op.Set(Gf.Vec3d(0.0, 0.0, ROBOT_BASE_Z))
+    raise_op.Set(Gf.Vec3d(0.0, 0.0, robot_base_z))
     # NOTE: don't apply ArticulationRootAPI here — the reference already
     # carries it through from the base USD. Applying it again triggers
     # `UsdPhysics: Nested articulation roots are not allowed`.

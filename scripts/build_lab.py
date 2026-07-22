@@ -27,7 +27,7 @@ _app = AppLauncher(headless=True).app
 
 from pathlib import Path
 
-from pxr import Gf, Usd, UsdGeom, UsdLux, Vt
+from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux, Vt
 
 PROJECT = Path(__file__).resolve().parent.parent
 BASE_USD = PROJECT / "assets/usd/volcaniarm_ros2.usd"
@@ -490,6 +490,31 @@ def _seed_viewport_pose(overlay):
     }
 
 
+def _seat_robot_on_mat(overlay, base_stage, mat_top_z):
+    """Raise the robot by the mat thickness so the wheels rest on the mat.
+
+    _ros2 seats the wheel bottoms at world z=0 (its ground has no mat).
+    Here the mat sits on the lab floor under the rig, so without this
+    override the wheels would sink `mat_top_z` into it. The base stage
+    already authors the `xformOp:translate:raise` op; the overlay's root
+    layer is stronger than its sublayer, so re-authoring the same attr
+    with the mat height added is enough — no new xform ops.
+    """
+    robot_path = "/World/volcaniarm"
+    base_raise_attr = base_stage.GetPrimAtPath(robot_path).GetAttribute(
+        "xformOp:translate:raise")
+    if not base_raise_attr or base_raise_attr.Get() is None:
+        raise RuntimeError(
+            f"{robot_path} has no xformOp:translate:raise in {BASE_USD.name} — "
+            "regenerate it with add_ros2_graph.py first")
+    lift = Gf.Vec3d(base_raise_attr.Get()) + Gf.Vec3d(0.0, 0.0, mat_top_z)
+    over = overlay.OverridePrim(robot_path)
+    over.CreateAttribute(
+        "xformOp:translate:raise", Sdf.ValueTypeNames.Double3).Set(lift)
+    print(f"[build_lab] robot raise override: {lift[2]:.4f} m "
+          f"(wheels on mat top at z={mat_top_z:.4f})")
+
+
 def main() -> None:
     base_stage = Usd.Stage.Open(str(BASE_USD))
     if base_stage is None:
@@ -516,6 +541,7 @@ def main() -> None:
 
     ceiling_center_z = _add_room_shell(overlay)
     mat_top_z = _add_floor_mat(overlay)
+    _seat_robot_on_mat(overlay, base_stage, mat_top_z)
     if BUILD_WORKBENCH:
         _add_workbench(overlay)
     if BUILD_DESK:
