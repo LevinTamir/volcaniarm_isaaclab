@@ -57,8 +57,12 @@ args_cli, hydra_args = parser.parse_known_args()
 # Cameras must be enabled: the env construction below spawns a TiledCamera.
 args_cli.enable_cameras = True
 
-# clear out sys.argv for Hydra
-sys.argv = [sys.argv[0]] + hydra_args
+# clear out sys.argv for Hydra; force its run dir under the per-task subtree
+# (same override as train.py/play.py — without it Hydra dumps configs into
+# the bare default outputs/<date>/<time>).
+_task_subdir = cli_args.task_log_subdir(args_cli.task)
+_hydra_run_dir_override = f"hydra.run.dir=outputs/{_task_subdir}/${{now:%Y-%m-%d}}/${{now:%H-%M-%S}}"
+sys.argv = [sys.argv[0], _hydra_run_dir_override] + hydra_args
 
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
