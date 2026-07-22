@@ -65,10 +65,8 @@ class Stage2EventCfg(AmeEventCfg):
         parent_post_init = getattr(super(), "__post_init__", None)
         if parent_post_init is not None:
             parent_post_init()
-        # Camera mount tolerance + vibration. Sane only on top of the
-        # home-pose-recomposing randomize_camera_pose — with the old
-        # accumulate-on-current version these magnitudes would random-walk
-        # the camera off the scene within a few hundred resets.
+        # Camera mount tolerance: per-env static offset baked at startup.
+        # ~1.5 cm / ~1.7 deg (1 sigma) covers a hand-bolted RealSense mount.
         self.randomize_camera_pose.params["pos_std"] = (0.015, 0.015, 0.015)
         self.randomize_camera_pose.params["rpy_std"] = (0.03, 0.03, 0.03)
         # Lighting: wider intensity and stronger color casts.

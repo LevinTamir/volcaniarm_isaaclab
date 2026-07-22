@@ -232,26 +232,32 @@ class randomize_weed_color(ManagerTermBase):
 
 
 class randomize_camera_pose(ManagerTermBase):
-    """Jitter the camera's world pose per env about its HOME pose on each reset.
+    """Give each env's camera a fixed random MOUNT offset, once, at startup.
 
-    On the first call per env the current world pose is cached as the home
-    pose — at that point no jitter has ever been applied, and the camera's
-    parent chain (`Robot/camera_link`) is a fixed mount on a fixed-base
-    robot, so the home world pose is constant per env. Every reset then
-    writes `home ⊕ fresh noise` (translation: per-axis Gaussian std
-    `pos_std`, m; rotation: per-axis Gaussian std `rpy_std`, rad, composed
-    about the home frame) via `set_world_poses(convention="world")`.
+    Fires with mode="startup": per env, samples a Gaussian offset
+    (translation std `pos_std` m, rotation std `rpy_std` rad, composed in
+    the camera's own frame) and bakes it into the camera prim's LOCAL pose
+    on top of the spawn offset. The offset then stays constant for the
+    whole run — which is the honest sim2real model: the real RealSense is
+    bolted once, so its pose error is a constant extrinsic bias, not
+    something that changes between episodes. Across 512 envs the policy
+    still sees 512 different mount errors every rollout.
 
-    Composing against home instead of the current pose is what keeps the
-    jitter from accumulating: the previous function form added noise to the
-    already-noised pose, which random-walked ~σ·√N over N resets.
+    Why local-USD writes and not `set_world_poses` per reset (the previous
+    design, twice): with Fabric enabled, `XformPrimView.set_world_poses`
+    writes GPU-side Fabric matrices that (a) get clobbered by the next
+    hierarchy update for non-Boundable prims like cameras and (b) are never
+    mirrored to USD, which is what the renderer actually consumes
+    (`Camera` builds its view with sync_usd_on_fabric_write=False). Net
+    effect: the old per-reset world-pose jitter NEVER moved the rendered
+    image — verified empirically 2026-07-22 (a manual 5 cm write left
+    `pos_w` and the render byte-identical). `set_local_poses` always goes
+    through USD, which the renderer reads.
     """
 
     def __init__(self, cfg: "EventTermCfg", env: "ManagerBasedEnv"):
         super().__init__(cfg, env)
-        self._home_pos: torch.Tensor | None = None
-        self._home_quat: torch.Tensor | None = None
-        self._captured = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+        self._applied = False
 
     def __call__(
         self,
@@ -261,32 +267,22 @@ class randomize_camera_pose(ManagerTermBase):
         pos_std: tuple[float, float, float],
         rpy_std: tuple[float, float, float],
     ):
+        if self._applied:
+            return
+        self._applied = True
+
         sensor = env.scene[sensor_name]
-        if env_ids is None:
-            env_ids = torch.arange(env.num_envs, device=env.device)
+        view = sensor._view  # XformPrimView; local-pose ops use USD in all modes
+        loc_t, loc_q = view.get_local_poses()
+        n = loc_t.shape[0]
+        dev, dtype = loc_t.device, loc_t.dtype
 
-        if self._home_pos is None:
-            self._home_pos = torch.zeros(env.num_envs, 3, device=env.device)
-            self._home_quat = torch.zeros(env.num_envs, 4, device=env.device)
+        pos_std_t = torch.tensor(pos_std, device=dev, dtype=dtype)
+        rpy_std_t = torch.tensor(rpy_std, device=dev, dtype=dtype)
 
-        fresh = env_ids[~self._captured[env_ids]]
-        if len(fresh) > 0:
-            self._home_pos[fresh] = sensor.data.pos_w[fresh]
-            self._home_quat[fresh] = sensor.data.quat_w_world[fresh]
-            self._captured[fresh] = True
+        new_t = loc_t + torch.randn(n, 3, device=dev, dtype=dtype) * pos_std_t
+        rpy = torch.randn(n, 3, device=dev, dtype=dtype) * rpy_std_t
+        delta_q = math_utils.quat_from_euler_xyz(rpy[:, 0], rpy[:, 1], rpy[:, 2])
+        new_q = math_utils.quat_mul(loc_q, delta_q)
 
-        home_pos = self._home_pos[env_ids]
-        home_quat = self._home_quat[env_ids]
-
-        pos_std_t = torch.tensor(pos_std, device=env.device, dtype=home_pos.dtype)
-        rpy_std_t = torch.tensor(rpy_std, device=env.device, dtype=home_pos.dtype)
-
-        new_pos = home_pos + torch.randn_like(home_pos) * pos_std_t
-
-        rpy_noise = torch.randn(len(env_ids), 3, device=env.device, dtype=home_pos.dtype) * rpy_std_t
-        delta_quat = math_utils.quat_from_euler_xyz(
-            rpy_noise[:, 0], rpy_noise[:, 1], rpy_noise[:, 2]
-        )
-        new_quat = math_utils.quat_mul(home_quat, delta_quat)
-
-        sensor.set_world_poses(new_pos, new_quat, env_ids=env_ids, convention="world")
+        view.set_local_poses(new_t, new_q)

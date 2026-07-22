@@ -303,9 +303,11 @@ class AmeEventCfg:
         },
     )
 
+    # Per-env static mount offset, baked once at startup (see the term's
+    # docstring for why this replaced per-reset world-pose jitter).
     randomize_camera_pose = EventTerm(
         func=mdp.randomize_camera_pose,
-        mode="reset",
+        mode="startup",
         params={
             "sensor_name": "base_camera",
             "pos_std": (0.001, 0.001, 0.001),
