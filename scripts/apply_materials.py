@@ -41,7 +41,6 @@ MATERIAL_GROUPS = {
             "volcaniarm_right_elbow_link",
             "volcaniarm_right_arm_link",
             "right_ee_link",
-            "camera_mount_linear_link",
             "camera_link",
             "fl_caster_wheel_mount_link",
             "fl_caster_wheel_link",
@@ -74,6 +73,7 @@ MATERIAL_GROUPS = {
             "fr_table_leg_link",
             "rl_table_leg_link",
             "rr_table_leg_link",
+            "camera_mount_linear_link",
         ],
     },
     "pbr_plastic_black": {
