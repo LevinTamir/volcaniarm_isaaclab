@@ -34,13 +34,6 @@ WEED_X_BASE = 0.071
 WEED_Y_RANGE = (-0.50, 0.50)
 WEED_Z_RANGE = (-0.98, -0.78)
 
-# Joint-range reward bounds. The elbow bound doubles as the sweep limit for
-# the generated workspace_table (its ELBOW_LIMIT_RAD must match — asserted
-# in the AME env cfg). Re-measured 2026-07-22: widening past ±75° gains no
-# workspace below z=0.30, so these stay at the deploy-validated values.
-ELBOW_IN_RANGE_RAD = 1.3089969389957472  # ±75°
-ARM_IN_RANGE_RAD = (-1.5707963267948966, 0.8726646259971648)  # -90°..+50°
-
 # Image resolution — small enough that 512+ envs fit on one GPU,
 # large enough for ResNet18 ImageNet weights to be in distribution
 # (model expects ~224x224 but tolerates smaller; we accept that
@@ -213,20 +206,6 @@ class RewardsCfg:
         weight=-0.2,
         params={"asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"])},
     )
-    # Mid-range gradient bridge. The table-driven task samples targets up to
-    # ~1 m apart; beyond ~0.5 m the std-0.3/0.05 terms are nearly flat and
-    # the first widened-workspace run (2026-07-22_16-55-00) stalled in the
-    # park-at-centroid optimum with rising action noise. std 0.6 keeps
-    # usable slope over the whole span, weight below the broad term so
-    # near-target precision ordering is unchanged.
-    weed_position_tracking_tanh_mid = RewTerm(
-        func=mdp.position_weed_error_tanh,
-        weight=0.75,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=["left_ee_link"]),
-            "std": 0.6,
-        },
-    )
     weed_position_tracking_tanh_broad = RewTerm(
         func=mdp.position_weed_error_tanh,
         weight=1.0,
@@ -250,8 +229,8 @@ class RewardsCfg:
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=["volcaniarm_(left|right)_elbow_joint"]
             ),
-            "low": -ELBOW_IN_RANGE_RAD,
-            "high": ELBOW_IN_RANGE_RAD,
+            "low": -1.3089969389957472,
+            "high": 1.3089969389957472,
         },
     )
     arm_pos_in_range = RewTerm(
@@ -261,14 +240,11 @@ class RewardsCfg:
             "asset_cfg": SceneEntityCfg(
                 "robot", joint_names=["volcaniarm_(left|right)_arm_joint"]
             ),
-            "low": ARM_IN_RANGE_RAD[0],
-            "high": ARM_IN_RANGE_RAD[1],
+            "low": -1.5707963267948966,
+            "high": 0.8726646259971648,
         },
     )
-    # 10x the original -0.001, which contributed ~nothing: stepper drives
-    # want smooth targets, and the deployed checkpoint is stage 2's, so the
-    # smoothness cost must be present in the shared stack, not stage-1-only.
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.01)
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.001)
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
         weight=-0.001,

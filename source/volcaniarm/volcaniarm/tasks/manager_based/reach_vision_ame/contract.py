@@ -84,26 +84,30 @@ WEED_SPAWN_Z_WORLD = WEED_HEIGHT_M
 # X is pinned: the 5-bar is planar and the EE only ever reaches x=0.071.
 WEED_X_BASE = 0.071
 
-# ---------------------------------------------------------------------
-# (y, z) sampling — table-driven since 2026-07-22
-# ---------------------------------------------------------------------
-# The canopy is sampled anywhere in the measured reachable envelope: z
-# uniform in WEED_Z_RANGE_WORLD, then y uniform in the per-z interval from
-# the generated `workspace_table.py` (reachable AND camera-visible), shrunk
-# by WEED_Y_SAFETY_MARGIN per side. Above ~0.13 the weed floats over the
-# mat — it stands in for taller weeds; the mask pipeline does not care.
+# Y sampling range, measured not assumed — see scripts/check_workspace.py.
+# The EE floor is z=0.052 m (the arm CANNOT reach the mat at any joint angle),
+# and the reachable Y span is height-dependent. In the 0.100-0.125 m band the
+# envelope is y in [-0.103, +0.143] within the reward's in-range elbow bound.
 #
-# The envelope was RE-MEASURED 2026-07-22 with a corrected sweep
-# (quasi-static ramp from home + working-branch filter; the old teleport
-# sweep let the drives pull toward home during settling, so its numbers —
-# including the old "EE floor z=0.052" and "y in [-0.103, 0.143]" — were
-# wrong). At the ±75° elbow bound the true canopy-band envelope is about
-# y in [-0.35, +0.47] at z=0.115, widening with height. Widening the elbow
-# bound past ±75° gains nothing below z=0.30, so the reward bounds stay.
-WEED_Z_RANGE_WORLD = (0.115, 0.25)
-WEED_Y_SAFETY_MARGIN = 0.02
-
-# SUPERSEDED by the table sampling above (kept for reference: this was the
-# line the pre-2026-07-22 checkpoints trained on).
+# ASYMMETRIC ON PURPOSE. The 5-bar reaches ~4 cm further in +Y than in -Y at
+# every height, so a symmetric +-0.10 put the negative extreme within 3 mm of
+# the boundary while leaving 4 cm of slack on the positive side — targets at
+# y=-0.10 were effectively at the edge of feasibility, which is what "the arm
+# struggles at the outer sides" looked like. These bounds keep ~2 cm of margin
+# at both ends.
+#
+# NOTE: the older `reach` / `reach_vision` tasks sample y in (-0.50, 0.50)
+# while the reachable envelope is only [-0.287, 0.299] — roughly 40% of their
+# targets were never reachable. Left as-is on purpose so their baselines still
+# describe what was actually trained.
 WEED_Y_RANGE = (-0.08, 0.12)
+
+# Canopy height jitter, applied on top of WEED_SPAWN_Z_WORLD. Small and
+# one-sided-upward: it stands in for weeds of slightly different size rather
+# than a weed floating off the mat.
+#
+# Kept tight (canopy 0.115-0.130) because the reachable Y span *shrinks* with
+# height once the elbows approach their bound — at 0.03 the canopy could land
+# in the 0.125-0.150 band, where Y narrows enough that the outer targets stop
+# being reachable at all. Set to (0.0, 0.0) to pin the canopy exactly.
 WEED_Z_JITTER = (0.0, 0.015)

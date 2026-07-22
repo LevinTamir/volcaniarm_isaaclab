@@ -33,45 +33,6 @@ parser.add_argument(
     "the articulation limit to see the full mechanical envelope.",
 )
 parser.add_argument("--report", default=None, help="write report here instead of stdout")
-parser.add_argument(
-    "--settle-tol",
-    type=float,
-    default=0.02,
-    help="max |settled - commanded| elbow residual (rad). Samples above this are "
-    "discarded: at wide bounds the closed 5-bar can fail to close or flip its "
-    "assembly branch, and the FK readout is then garbage that silently inflates "
-    "the envelope.",
-)
-parser.add_argument(
-    "--arm-low",
-    type=float,
-    default=-1.5707963267948966,
-    help="passive arm-joint lower bound (rad) for a sample to count as the "
-    "working assembly branch (the arm_pos_in_range reward bound).",
-)
-parser.add_argument(
-    "--arm-high",
-    type=float,
-    default=0.8726646259971648,
-    help="passive arm-joint upper bound (rad), see --arm-low.",
-)
-parser.add_argument(
-    "--emit-table",
-    nargs="?",
-    const="source/volcaniarm/volcaniarm/tasks/manager_based/reach_vision_ame/workspace_table.py",
-    default=None,
-    help="emit a generated Python module with the z->(y_min,y_max) reachability "
-    "table (path optional; default is the AME task package).",
-)
-parser.add_argument("--table-z-step", type=float, default=0.005, help="table z bin height (m)")
-parser.add_argument(
-    "--table-z-range",
-    type=float,
-    nargs=2,
-    default=(0.05, 0.30),
-    metavar=("Z_LO", "Z_HI"),
-    help="world-z range covered by the emitted table (m)",
-)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.headless = True
@@ -120,21 +81,11 @@ def main() -> None:
     env.reset()
     joint_pos = robot.data.default_joint_pos.clone()
     joint_pos[:, elbow_ids] = q
-
-    # Drive each env from the assembled HOME pose to its commanded elbow
-    # angles by ramping the position-drive targets quasi-statically, then
-    # hold. This is the only measurement that matches what a policy can do:
-    # continuity keeps the closed loop on the WORKING assembly branch.
-    # (Teleporting the joints instead lets PhysX settle onto flipped
-    # branches — arms folded up over the base — which inflates the envelope
-    # with poses the real arm can never reach; and without holding the
-    # targets the drives yank everything back home during the settle.)
-    ramp_steps, hold_steps = 90, 60
-    home = robot.data.default_joint_pos.clone()
-    for t in range(ramp_steps + hold_steps):
-        alpha = min(1.0, (t + 1) / ramp_steps)
-        robot.set_joint_position_target(home + alpha * (joint_pos - home))
-        robot.write_data_to_sim()
+    joint_vel = torch.zeros_like(robot.data.default_joint_vel)
+    robot.write_joint_state_to_sim(joint_pos, joint_vel)
+    robot.write_data_to_sim()
+    # Let the closed 5-bar settle onto the commanded elbow angles.
+    for _ in range(4):
         env.sim.step(render=False)
         robot.update(env.sim.get_physics_dt())
 
@@ -143,37 +94,11 @@ def main() -> None:
     origin = env.scene.env_origins
     ee = ee_w - origin  # per-env local == base-aligned world
 
-    # Validity: (a) the elbows actually settled onto the commanded angles
-    # (the loop closed there), AND (b) the passive arms stayed inside the
-    # working-branch bound. Ramping keeps almost everything on the working
-    # branch, but near-singular ramps can still flip — and a flipped pose
-    # is not part of the deployable workspace.
-    residual = (robot.data.joint_pos[:, elbow_ids] - joint_pos[:, elbow_ids]).abs()
-    settled = (residual < args_cli.settle_tol).all(dim=-1)
-
-    arm_ids, arm_names = robot.find_joints(["volcaniarm_(left|right)_arm_joint"])
-    arm_all = robot.data.joint_pos[:, arm_ids]
-    on_branch = ((arm_all > args_cli.arm_low) & (arm_all < args_cli.arm_high)).all(dim=-1)
-
-    valid = settled & on_branch
-    n_valid = int(valid.sum())
-
-    ee = ee[valid]
     x, y, z = ee[:, 0], ee[:, 1], ee[:, 2]
     zb = z - BASE_Z_WORLD  # base-link frame
 
-    # Passive arm-joint span over the valid sweep — this is what the
-    # `arm_pos_in_range` reward bound must cover if the elbow bound widens.
-    arm_q = arm_all[valid]
-
     lines = [
         f"task={args_cli.task}  samples={n*n}  elbow range=+-{ELBOW_LIMIT:.4f} rad",
-        f"valid: {n_valid}/{n*n} ({100.0*n_valid/(n*n):.1f}%)  "
-        f"[settled<{args_cli.settle_tol:.3f} rad: {int(settled.sum())}; "
-        f"arm on-branch ({args_cli.arm_low:.3f},{args_cli.arm_high:.3f}): "
-        f"{int(on_branch.sum())}]",
-        f"passive arm joints over valid sweep: "
-        f"[{arm_q.min():.4f}, {arm_q.max():.4f}] rad",
         f"EE x : [{x.min():.4f}, {x.max():.4f}]  (world)",
         f"EE y : [{y.min():.4f}, {y.max():.4f}]  (world)",
         f"EE z : [{z.min():.4f}, {z.max():.4f}]  (world)   base-frame z: [{zb.min():.4f}, {zb.max():.4f}]",
@@ -222,9 +147,6 @@ def main() -> None:
     for nm, i in zip(elbow_names, range(len(elbow_ids))):
         lines.append(f"  {nm}: [{lim[i,0]:.4f}, {lim[i,1]:.4f}]   (swept +-{ELBOW_LIMIT:.4f})")
 
-    if args_cli.emit_table:
-        lines += emit_table(y, z, arm_q)
-
     text = "\n".join(lines)
     if args_cli.report:
         with open(args_cli.report, "w") as f:
@@ -233,89 +155,6 @@ def main() -> None:
         print(text)
 
     env.close()
-
-
-def emit_table(y: torch.Tensor, z: torch.Tensor, arm_q: torch.Tensor) -> list[str]:
-    """Write the generated z->(y_min, y_max) module; return report lines.
-
-    Bins the *valid* sweep samples by world z. A bin is usable only if it has
-    enough samples and its sorted-y max gap is small (the reachable set at
-    fixed z is not guaranteed to be a single interval — a hole would otherwise
-    make the sampler place targets in unreachable space). Emitted row i is the
-    intersection of bins i and i+1, so the interval stays conservative where
-    the envelope shrinks with height.
-    """
-    z_lo_r, z_hi_r = args_cli.table_z_range
-    step = args_cli.table_z_step
-    n_bins = max(1, round((z_hi_r - z_lo_r) / step))
-
-    report: list[str] = ["", f"emitting table -> {args_cli.emit_table}"]
-    bins = []  # (z_lo, z_hi, y_min, y_max, usable)
-    for i in range(n_bins):
-        lo = z_lo_r + i * step
-        hi = lo + step
-        m = (z >= lo) & (z < hi)
-        count = int(m.sum())
-        if count < 8:
-            bins.append((lo, hi, 0.0, 0.0, False))
-            if count > 0:
-                report.append(f"  bin [{lo:.3f},{hi:.3f}): only {count} samples — dropped")
-            continue
-        ys = torch.sort(y[m]).values
-        span = float(ys[-1] - ys[0])
-        gaps = (ys[1:] - ys[:-1])
-        max_gap = float(gaps.max())
-        # Expected spacing if the samples were spread evenly over the span;
-        # a gap much larger than that means the set has a hole at this z.
-        expected = max(span / (count - 1), 1e-4)
-        if max_gap > max(0.010, 5.0 * expected):
-            bins.append((lo, hi, 0.0, 0.0, False))
-            report.append(
-                f"  bin [{lo:.3f},{hi:.3f}): y-hole (max gap {max_gap*100:.1f} cm) — dropped"
-            )
-            continue
-        bins.append((lo, hi, float(ys[0]), float(ys[-1]), True))
-
-    rows = []
-    for i, (lo, hi, y0, y1, ok) in enumerate(bins):
-        nxt = bins[i + 1] if i + 1 < len(bins) else bins[i]
-        if not ok or not nxt[4]:
-            continue
-        y_min = max(y0, nxt[2])
-        y_max = min(y1, nxt[3])
-        if y_max - y_min < 0.01:
-            report.append(f"  bin [{lo:.3f},{hi:.3f}): intersection with next bin empty — dropped")
-            continue
-        rows.append((lo, hi, y_min, y_max))
-
-    header = (
-        "# Copyright (c) 2026, Tamir Levin.\n"
-        "# SPDX-License-Identifier: Apache-2.0\n"
-        '"""AUTO-GENERATED by scripts/check_workspace.py --emit-table -- DO NOT HAND-EDIT.\n'
-        "\n"
-        "Measured reachable EE envelope of the closed 5-bar, as world-z bins with\n"
-        "the y-interval reachable at that height (valid, settled samples only;\n"
-        "row i intersected with row i+1 to stay conservative). Regenerate with:\n"
-        "\n"
-        "    ~/isaac/IsaacLab/isaaclab.sh -p scripts/check_workspace.py \\\n"
-        f"        --grid {args_cli.grid} --limit {ELBOW_LIMIT:.10f} --emit-table\n"
-        '"""\n'
-        "\n"
-        f"ELBOW_LIMIT_RAD = {ELBOW_LIMIT:.10f}\n"
-        f"GRID = {args_cli.grid}\n"
-        f"Z_STEP = {step}\n"
-        f"ARM_JOINT_RANGE_RAD = ({arm_q.min():.4f}, {arm_q.max():.4f})\n"
-        "# rows: (z_lo_world, z_hi_world, y_min, y_max)\n"
-    )
-    body = "TABLE = [\n"
-    for lo, hi, y0, y1 in rows:
-        body += f"    ({lo:.3f}, {hi:.3f}, {y0:.4f}, {y1:.4f}),\n"
-    body += "]\n"
-
-    with open(args_cli.emit_table, "w") as f:
-        f.write(header + body)
-    report.append(f"  {len(rows)} usable rows over z=[{z_lo_r}, {z_hi_r}]")
-    return report
 
 
 if __name__ == "__main__":

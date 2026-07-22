@@ -71,11 +71,7 @@ class AmeActorCriticCfg(RslRlPpoActorCriticCfg):
 @configclass
 class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 32
-    # ~3x the old narrow-workspace convergence point (mean reward plateaued
-    # at ~iter 450 on 2026-07-20), scaled for the table-driven target space.
-    # Stop early when Episode_Reward/weed_position_tracking_tanh_fine
-    # flattens — checkpoints land every save_interval anyway.
-    max_iterations = 1500
+    max_iterations = 3000
     save_interval = 100
     experiment_name = "volcaniarm_reach_vision_ame"
     empirical_normalization = False
@@ -98,11 +94,7 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        # 0.005, halved from 0.01: on the widened workspace the far-field
-        # gradient is shallow and the larger bonus inflated exploration
-        # noise (0.3 -> 0.7 by iter 150) instead of letting it anneal —
-        # the visible failure mode of the first stalled run.
-        entropy_coef=0.005,
+        entropy_coef=0.01,
         num_learning_epochs=5,
         # 8 rather than the baseline's 4: the AME encoder's activations scale
         # with token count, so smaller minibatches keep peak memory down.
@@ -117,23 +109,3 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         desired_kl=0.01,
         max_grad_norm=1.0,
     )
-
-
-@configclass
-class Stage2PPORunnerCfg(PPORunnerCfg):
-    """Stage-2 fine-tuning runner (task id -v1).
-
-    `experiment_name` is inherited UNCHANGED on purpose: both stages must
-    share logs/reach_vision_ame/rsl_rl/volcaniarm_reach_vision_ame/ so
-    `--resume --load_run <stage1_run>` (and play/export checkpoint
-    discovery) can see stage-1 runs. The run_name suffix is what tells the
-    stages apart in TensorBoard. The DR shock will spike KL early on and
-    the adaptive schedule will cut the LR — expect ~20 noisy iterations; if
-    the policy visibly collapses instead, drop algorithm.learning_rate to
-    1e-4 here.
-    """
-
-    # Fine-tuning recovers from the DR shock within a few hundred
-    # iterations; 1000 leaves comfortable headroom.
-    max_iterations = 1000
-    run_name = "stage2_dr"

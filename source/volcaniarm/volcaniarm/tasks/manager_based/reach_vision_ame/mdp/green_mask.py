@@ -57,7 +57,6 @@ class green_mask(ManagerTermBase):
         self._out_hw = tuple(cfg.params.get("out_hw", (MASK_H, MASK_W)))
         self._isolate = bool(cfg.params.get("isolate", True))
         self._jitter = dict(cfg.params.get("jitter", GREEN_JITTER))
-        self._dropout = cfg.params.get("dropout", None)
         self._softness = GREEN_NOMINAL["softness"]
         self._thr = {
             k: torch.full((env.num_envs, 1, 1), float(v), device=env.device)
@@ -76,36 +75,6 @@ class green_mask(ManagerTermBase):
             draw = (torch.rand(n, 1, 1, device=self._thr[key].device) * 2.0 - 1.0) * half
             self._thr[key][env_ids] = base + draw
 
-    def _apply_dropout(self, mask: torch.Tensor) -> torch.Tensor:
-        """Patch + frame dropout, applied BEFORE `isolate_blob`.
-
-        Pre-isolate placement is deliberate: real occlusion punches holes in
-        the RGB-derived mask and the deployed `isolate_blob` then keeps the
-        component holding the brightest surviving pixel — training must see
-        that same "blob split, one fragment survives" artifact, not a
-        cosmetic post-isolate hole. Frame dropout stands in for stale/black
-        frames at deploy.
-        """
-        n, h, w = mask.shape
-        dev = mask.device
-        patch_prob = float(self._dropout.get("patch_prob", 0.0))
-        if patch_prob > 0.0:
-            n_lo, n_hi = self._dropout.get("num_patches", (1, 3))
-            s_lo, s_hi = self._dropout.get("patch_size", (4, 12))
-            affected = torch.rand(n, device=dev) < patch_prob
-            for i in affected.nonzero(as_tuple=True)[0].tolist():
-                for _ in range(int(torch.randint(n_lo, n_hi + 1, (1,)).item())):
-                    ph = int(torch.randint(s_lo, s_hi + 1, (1,)).item())
-                    pw = int(torch.randint(s_lo, s_hi + 1, (1,)).item())
-                    r = int(torch.randint(0, max(1, h - ph), (1,)).item())
-                    c = int(torch.randint(0, max(1, w - pw), (1,)).item())
-                    mask[i, r : r + ph, c : c + pw] = 0.0
-        frame_prob = float(self._dropout.get("frame_drop_prob", 0.0))
-        if frame_prob > 0.0:
-            dropped = torch.rand(n, device=dev) < frame_prob
-            mask[dropped] = 0.0
-        return mask
-
     def __call__(
         self,
         env: ManagerBasedEnv,
@@ -113,7 +82,6 @@ class green_mask(ManagerTermBase):
         out_hw: tuple[int, int] | None = None,
         isolate: bool = True,
         jitter: dict | None = None,
-        dropout: dict | None = None,
     ) -> torch.Tensor:
         rgb = env.scene.sensors[self._sensor_name].data.output["rgb"]
         # The camera renders at the D435i aspect (RENDER_HxRENDER_W); squash
@@ -131,8 +99,6 @@ class green_mask(ManagerTermBase):
         mask = rgb_to_green_mask(
             rgb, softness=self._softness, out_hw=self._out_hw, **self._thr
         )
-        if self._dropout is not None:
-            mask = self._apply_dropout(mask)
         if self._isolate:
             mask = isolate_blob(mask)
         # ObservationManager does not auto-flatten; terms must be 2-D.

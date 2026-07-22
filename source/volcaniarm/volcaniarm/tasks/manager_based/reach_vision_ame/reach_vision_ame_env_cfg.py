@@ -28,7 +28,6 @@ from pathlib import Path
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg, RigidObjectCfg
-from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
@@ -44,8 +43,6 @@ from .base_env_cfg import (
     VolcaniarmReachVisionSceneCfg,
 )
 from . import mdp
-from . import workspace_table
-from .base_env_cfg import ELBOW_IN_RANGE_RAD
 from .contract import (
     MASK_GROUP,
     MASK_H,
@@ -55,9 +52,10 @@ from .contract import (
     RENDER_H,
     RENDER_W,
     WEED_COLOR,
+    WEED_SPAWN_Z_WORLD,
     WEED_X_BASE,
-    WEED_Y_SAFETY_MARGIN,
-    WEED_Z_RANGE_WORLD,
+    WEED_Y_RANGE,
+    WEED_Z_JITTER,
 )
 
 ELBOW_JOINTS = ["volcaniarm_(left|right)_elbow_joint"]
@@ -228,11 +226,10 @@ class AmeObservationsCfg:
 class AmeEventCfg:
     """Reset events. Lighting/camera DR inherited in spirit from `reach_vision`.
 
-    The weed canopy is sampled over the measured reachable-and-visible (y, z)
-    envelope: z uniform in WEED_Z_RANGE_WORLD, y uniform in the per-z interval
-    from the generated `workspace_table` minus WEED_Y_SAFETY_MARGIN. X stays
-    pinned by the planar mechanism. Above ~0.13 the weed floats over the mat,
-    standing in for taller weeds.
+    The weed is sampled along a *line*: X is pinned by the planar mechanism, Z
+    is pinned because the weed stands on the mat, and only Y varies. The Y
+    range is measured (see `scripts/check_workspace.py`), not inherited — the
+    older tasks sampled +-0.50 while only [-0.287, 0.299] is reachable.
     """
 
     reset_robot_joints = EventTerm(
@@ -246,27 +243,39 @@ class AmeEventCfg:
     )
 
     randomize_weed_pose = EventTerm(
-        func=mdp.reset_weed_in_reachable_workspace,
+        func=mdp.reset_root_state_uniform,
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("weed"),
-            "x_pos": WEED_X_BASE,
-            "z_range": WEED_Z_RANGE_WORLD,
-            "y_margin": WEED_Y_SAFETY_MARGIN,
+            "pose_range": {
+                "x": (WEED_X_BASE, WEED_X_BASE),
+                "y": WEED_Y_RANGE,
+                "z": (
+                    WEED_SPAWN_Z_WORLD + WEED_Z_JITTER[0],
+                    WEED_SPAWN_Z_WORLD + WEED_Z_JITTER[1],
+                ),
+            },
+            "velocity_range": {},
         },
     )
 
     # Mid-episode resample: ~3 reach attempts per 12 s episode instead of 1.
     resample_weed_pose = EventTerm(
-        func=mdp.reset_weed_in_reachable_workspace,
+        func=mdp.reset_root_state_uniform,
         mode="interval",
         interval_range_s=(4.0, 4.0),
         is_global_time=False,
         params={
             "asset_cfg": SceneEntityCfg("weed"),
-            "x_pos": WEED_X_BASE,
-            "z_range": WEED_Z_RANGE_WORLD,
-            "y_margin": WEED_Y_SAFETY_MARGIN,
+            "pose_range": {
+                "x": (WEED_X_BASE, WEED_X_BASE),
+                "y": WEED_Y_RANGE,
+                "z": (
+                    WEED_SPAWN_Z_WORLD + WEED_Z_JITTER[0],
+                    WEED_SPAWN_Z_WORLD + WEED_Z_JITTER[1],
+                ),
+            },
+            "velocity_range": {},
         },
     )
 
@@ -304,39 +313,13 @@ class AmeEventCfg:
         },
     )
 
-    # Per-env static mount offset, baked once at startup (see the term's
-    # docstring for why this replaced per-reset world-pose jitter).
     randomize_camera_pose = EventTerm(
         func=mdp.randomize_camera_pose,
-        mode="startup",
+        mode="reset",
         params={
             "sensor_name": "base_camera",
             "pos_std": (0.001, 0.001, 0.001),
             "rpy_std": (0.003, 0.003, 0.003),
-        },
-    )
-
-
-@configclass
-class AmeCurriculumCfg:
-    """Spatial curriculum: narrow validated band -> full measured table.
-
-    The full region from a cold start stalls in the park-at-centroid optimum
-    (runs 2026-07-22_16-55-00 / 17-14-34). y_scale=0.25 collapses the 0.115
-    band to ~[-0.04, 0.16] — essentially the old WEED_Y_RANGE line that
-    learned in ~50 iterations — then the region grows to the full table
-    between iterations 100 and 600.
-    """
-
-    expand_weed_region = CurrTerm(
-        func=mdp.expand_weed_region,
-        params={
-            "start_iter": 100,
-            "end_iter": 600,
-            "z_range_start": (0.115, 0.145),
-            "z_range_end": WEED_Z_RANGE_WORLD,
-            "y_scale_start": 0.25,
-            "y_scale_end": 1.0,
         },
     )
 
@@ -356,19 +339,12 @@ class VolcaniarmReachVisionAmeEnvCfg(VolcaniarmReachVisionEnvCfg):
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
     events: AmeEventCfg = AmeEventCfg()
-    curriculum: AmeCurriculumCfg = AmeCurriculumCfg()
 
     def __post_init__(self):
         super().__post_init__()
-        # The inherited reward terms resolve their target through `weed_cfg`,
-        # which already defaults to SceneEntityCfg("weed"); nothing to
-        # retarget. But the sampling table must match the reward's elbow
-        # bound — a stale table silently trains on the wrong envelope.
-        assert abs(workspace_table.ELBOW_LIMIT_RAD - ELBOW_IN_RANGE_RAD) < 1e-4, (
-            f"workspace_table.py was generated at elbow limit "
-            f"{workspace_table.ELBOW_LIMIT_RAD} but the reward bound is "
-            f"{ELBOW_IN_RANGE_RAD} — regenerate it (see the table header)"
-        )
+        # Nothing to retarget: the inherited reward terms resolve their target
+        # through `weed_cfg`, which already defaults to SceneEntityCfg("weed"),
+        # and this scene names its target entity `weed`.
 
 
 @configclass
@@ -379,6 +355,3 @@ class VolcaniarmReachVisionAmeEnvCfg_PLAY(VolcaniarmReachVisionAmeEnvCfg):
         self.scene.env_spacing = 2.5
         self.observations.policy.enable_corruption = False
         self.observations.mask.enable_corruption = False
-        # Evaluate over the FULL region — a fresh env restarts
-        # common_step_counter at 0, which would re-narrow the sampling.
-        self.curriculum.expand_weed_region = None
