@@ -71,7 +71,11 @@ class AmeActorCriticCfg(RslRlPpoActorCriticCfg):
 @configclass
 class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 32
-    max_iterations = 3000
+    # ~3x the old narrow-workspace convergence point (mean reward plateaued
+    # at ~iter 450 on 2026-07-20), scaled for the table-driven target space.
+    # Stop early when Episode_Reward/weed_position_tracking_tanh_fine
+    # flattens — checkpoints land every save_interval anyway.
+    max_iterations = 1500
     save_interval = 100
     experiment_name = "volcaniarm_reach_vision_ame"
     empirical_normalization = False
@@ -125,5 +129,7 @@ class Stage2PPORunnerCfg(PPORunnerCfg):
     1e-4 here.
     """
 
-    max_iterations = 1500
+    # Fine-tuning recovers from the DR shock within a few hundred
+    # iterations; 1000 leaves comfortable headroom.
+    max_iterations = 1000
     run_name = "stage2_dr"
