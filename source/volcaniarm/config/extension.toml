@@ -26,10 +26,6 @@ keywords = ["extension", "template", "isaaclab"]
 name = "volcaniarm"
 
 [isaac_lab_settings]
-# TODO: Uncomment and list any apt dependencies here.
-#       If none, leave it commented out.
-# apt_deps = ["example_package"]
-# TODO: Uncomment and provide path to a ros_ws
-#       with rosdeps to be installed. If none,
-#       leave it commented out.
-# ros_ws = "path/from/extension_root/to/ros_ws"
+# No apt dependencies. The paired ROS2 workspace (volcaniarm_ws) is a
+# separate repo and is deliberately NOT wired in here — deployment copies
+# the exported ONNX bundle over instead (see README "Deploying").

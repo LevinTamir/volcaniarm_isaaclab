@@ -35,7 +35,7 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
-from ..reach_vision.reach_vision_env_cfg import (
+from .base_env_cfg import (
     ActionsCfg,
     RewardsCfg,
     TerminationsCfg,

@@ -22,7 +22,7 @@ controller then runs a single ONNX session with three named inputs
 
 Usage:
     isaaclab.sh -p source/volcaniarm/scripts/rsl_rl/export_onnx_bundle.py \\
-        --task Volcaniarm-Reach-Vision-Play-v0 \\
+        --task Volcaniarm-Reach-Vision-AME-Play-v0 \\
         [--load_run <run_name>] [--checkpoint model_<n>.pt]
 """
 
@@ -37,7 +37,7 @@ from isaaclab.app import AppLauncher
 import cli_args  # isort: skip
 
 parser = argparse.ArgumentParser(description="Export bundled ONNX (image+proprio → action).")
-parser.add_argument("--task", type=str, default="Volcaniarm-Reach-Vision-Play-v0", help="Task to load cfg from.")
+parser.add_argument("--task", type=str, default="Volcaniarm-Reach-Vision-AME-Play-v0", help="Task to load cfg from.")
 parser.add_argument(
     "--agent", type=str, default="rsl_rl_cfg_entry_point", help="RL agent configuration entry point."
 )
@@ -116,8 +116,9 @@ class BundledVisionPolicy(torch.nn.Module):
         x = image.permute(0, 3, 1, 2).float() / 255.0
         x = (x - self.imagenet_mean) / self.imagenet_std
         features = self.resnet(x)
-        # Order MUST match `ObservationsCfg.PolicyCfg` term declaration
-        # order in reach_vision_env_cfg.py:
+        # Order MUST match the task's `ObservationsCfg.PolicyCfg` term
+        # declaration order (this legacy ResNet path belonged to the retired
+        # reach_vision task):
         #   joint_pos, actions, image_features  →  [jpr(2), last_action(2), features(1000)].
         obs = torch.cat([joint_pos_rel, last_action, features], dim=1)
         normed = self.normalizer(obs)
