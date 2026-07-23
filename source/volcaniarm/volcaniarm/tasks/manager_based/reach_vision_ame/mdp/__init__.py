@@ -15,7 +15,10 @@ from ...reach.mdp.rewards import joint_pos_out_of_range  # noqa: F401
 from .events import (  # noqa: F401
     randomize_camera_pose,
     randomize_light,
+    randomize_robot_color,
     randomize_visual_color_global,
+    randomize_weed_color,
+    randomize_weed_scale,
     reset_weed_in_reachable_workspace,
 )
 from .rewards import (  # noqa: F401

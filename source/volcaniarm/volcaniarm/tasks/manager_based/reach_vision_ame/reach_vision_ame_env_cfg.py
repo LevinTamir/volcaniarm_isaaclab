@@ -307,9 +307,13 @@ class AmeEventCfg:
         },
     )
 
+    # Static per-env camera MOUNT offset, baked into the USD local pose once
+    # at startup (per-reset world-pose writes never reach the renderer under
+    # Fabric — see the term's docstring). Stage-1 stds stay tiny; stage 2
+    # opens them to hand-bolted-RealSense magnitudes.
     randomize_camera_pose = EventTerm(
         func=mdp.randomize_camera_pose,
-        mode="reset",
+        mode="startup",
         params={
             "sensor_name": "base_camera",
             "pos_std": (0.001, 0.001, 0.001),

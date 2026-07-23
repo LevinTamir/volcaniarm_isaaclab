@@ -114,27 +114,31 @@ def _balanced_color_jitter(base: tuple[float, float, float], variation: float) -
     return tuple(max(0.0, min(1.0, b + o)) for b, o in zip(base, balanced))
 
 
-def _find_diffuse_color_attr(prim):
-    """Walk children looking for a Shader prim with a `diffuseColor` input.
+def _find_shader_attr(prim, input_name: str, _depth: int = 0):
+    """Walk the subtree looking for a Shader prim with an `inputs:<name>` attr.
 
-    Matches both UsdPreviewSurface (input name `diffuseColor`) and the
-    inputs Isaac's PreviewSurfaceCfg authors during spawn.
+    Matches the inputs Isaac's PreviewSurfaceCfg authors during spawn
+    (`diffuseColor`, `roughness`, `metallic`, ...). Depth-bounded recursion:
+    spawned props nest the shader at varying depth (e.g.
+    <prim>/Looks/Material/Shader for a UsdFileCfg-spawned mesh).
     """
     from pxr import UsdShade
 
+    if _depth > 6:
+        return None
+    if prim.IsA(UsdShade.Shader):
+        attr = prim.GetAttribute(f"inputs:{input_name}")
+        if attr.IsValid():
+            return attr
     for child in prim.GetAllChildren():
-        if child.IsA(UsdShade.Shader):
-            attr = child.GetAttribute("inputs:diffuseColor")
-            if attr.IsValid():
-                return attr
-        # Recurse one level — PreviewSurfaceCfg sometimes wraps shaders
-        # in an intermediate scope (e.g. <prim>/Looks/Material/Shader).
-        for grandchild in child.GetAllChildren():
-            if grandchild.IsA(UsdShade.Shader):
-                attr = grandchild.GetAttribute("inputs:diffuseColor")
-                if attr.IsValid():
-                    return attr
+        attr = _find_shader_attr(child, input_name, _depth + 1)
+        if attr is not None:
+            return attr
     return None
+
+
+def _find_diffuse_color_attr(prim):
+    return _find_shader_attr(prim, "diffuseColor")
 
 
 def randomize_visual_color_global(
@@ -143,14 +147,20 @@ def randomize_visual_color_global(
     asset_cfg: SceneEntityCfg,
     base_color: tuple[float, float, float],
     variation: float,
+    roughness_range: tuple[float, float] | None = None,
+    metallic_range: tuple[float, float] | None = None,
 ):
-    """Jitter the diffuseColor of a global visual asset's bound material.
+    """Jitter a global visual asset's bound material (color, optionally PBR).
 
     Targets a single-prim global asset (e.g. the floor cuboid). With
     `replicate_physics=True` the asset is one prim regardless of env count,
-    so the new color applies to every env's view from the next render
+    so the new look applies to every env's view from the next render
     onward. The function does nothing per-env-batch; it just samples once
-    and writes the attribute.
+    and writes the attributes.
+
+    `roughness_range` / `metallic_range` (stage-2 DR) jitter the same-named
+    PreviewSurface inputs — e.g. the mat stays black but sweeps matte
+    rubber to semi-gloss. Defaults None → stage-1 behavior unchanged.
     """
     asset: AssetBase = env.scene[asset_cfg.name]
     prim = asset.prims[0]
@@ -159,6 +169,14 @@ def randomize_visual_color_global(
         return
     color = _balanced_color_jitter(base_color, variation)
     color_attr.Set(color)
+    if roughness_range is not None:
+        attr = _find_shader_attr(prim, "roughness")
+        if attr is not None:
+            attr.Set(random.uniform(*roughness_range))
+    if metallic_range is not None:
+        attr = _find_shader_attr(prim, "metallic")
+        if attr is not None:
+            attr.Set(random.uniform(*metallic_range))
 
 
 def randomize_light(
@@ -168,11 +186,22 @@ def randomize_light(
     intensity_range: tuple[float, float],
     color_base: tuple[float, float, float] = (1.0, 1.0, 1.0),
     color_variation: float = 0.0,
+    elevation_range_deg: tuple[float, float] | None = None,
+    azimuth_range_deg: tuple[float, float] = (0.0, 360.0),
+    angle_range: tuple[float, float] | None = None,
 ):
-    """Set a light's `inputs:intensity` (and optionally `inputs:color`).
+    """Set a light's `inputs:intensity` (and optionally color / direction).
 
     Lights are global scene assets — one prim, one set per call. Useful for
     `DomeLightCfg` / `DistantLightCfg`.
+
+    Stage-2 DR extras (default off):
+    - `elevation_range_deg` + `azimuth_range_deg`: re-aim a DistantLight so
+      shadow direction/length vary. Elevation is measured up from the
+      horizon (90 = straight down). UsdLux lights emit along local -Z; the
+      sampled direction is written to the prim's `xformOp:orient`.
+    - `angle_range`: DistantLight `inputs:angle` (deg) — apparent source
+      size, i.e. shadow softness.
     """
     asset: AssetBase = env.scene[asset_cfg.name]
     prim = asset.prims[0]
@@ -187,45 +216,240 @@ def randomize_light(
             color = _balanced_color_jitter(color_base, color_variation)
             color_attr.Set(color)
 
+    if angle_range is not None:
+        angle_attr = prim.GetAttribute("inputs:angle")
+        if angle_attr.IsValid():
+            angle_attr.Set(random.uniform(*angle_range))
 
-def randomize_camera_pose(
-    env: "ManagerBasedEnv",
-    env_ids: torch.Tensor,
-    sensor_name: str,
-    pos_std: tuple[float, float, float],
-    rpy_std: tuple[float, float, float],
-):
-    """Jitter the camera's world pose per env, additively on each reset.
+    if elevation_range_deg is not None:
+        import math
 
-    Reads the affected envs' current camera world pose, adds small Gaussian
-    noise on translation (per-axis std `pos_std`, m) and rotation (per-axis
-    std `rpy_std`, rad) about the current frame, and writes back via
-    `set_world_poses(convention="world")`.
+        from pxr import Gf, UsdGeom
 
-    The jitter accumulates across resets — over many resets the camera
-    drifts. For 30 Hz × 12 s episodes that's ~12k resets per env over a
-    1k-iter run; pos_std=1e-3 gives expected drift ~σ·√N ≈ 11 cm at the
-    end. Keep `pos_std` and `rpy_std` small. If drift becomes a problem,
-    track a per-env base pose at startup and recompose against the parent
-    body's world pose every reset (TODO).
+        el = math.radians(random.uniform(*elevation_range_deg))
+        az = math.radians(random.uniform(*azimuth_range_deg))
+        # Light travel direction (world): down at `el` above the horizon.
+        d = Gf.Vec3d(
+            math.cos(el) * math.cos(az), math.cos(el) * math.sin(az), -math.sin(el)
+        )
+        rot = Gf.Rotation(Gf.Vec3d(0.0, 0.0, -1.0), d)
+        xf = UsdGeom.Xformable(prim)
+        orient_op = next(
+            (o for o in xf.GetOrderedXformOps() if o.GetOpType() == UsdGeom.XformOp.TypeOrient),
+            None,
+        )
+        if orient_op is None:
+            orient_op = xf.AddOrientOp()
+        q = rot.GetQuat()
+        if orient_op.GetPrecision() == UsdGeom.XformOp.PrecisionFloat:
+            orient_op.Set(Gf.Quatf(q))
+        else:
+            orient_op.Set(q)
+
+
+class randomize_camera_pose(ManagerTermBase):
+    """Give each env's camera a fixed random MOUNT offset, once, at startup.
+
+    Fires with mode="startup": per env, samples a Gaussian offset
+    (translation std `pos_std` m, rotation std `rpy_std` rad, composed in
+    the camera's own frame) and bakes it into the camera prim's LOCAL pose
+    on top of the spawn offset. The offset then stays constant for the
+    whole run — which is the honest sim2real model: the real RealSense is
+    bolted once, so its pose error is a constant extrinsic bias, not
+    something that changes between episodes. Across 512 envs the policy
+    still sees 512 different mount errors every rollout.
+
+    Why local-USD writes and not `set_world_poses` per reset (the previous
+    design, twice): with Fabric enabled, `XformPrimView.set_world_poses`
+    writes GPU-side Fabric matrices that (a) get clobbered by the next
+    hierarchy update for non-Boundable prims like cameras and (b) are never
+    mirrored to USD, which is what the renderer actually consumes
+    (`Camera` builds its view with sync_usd_on_fabric_write=False). Net
+    effect: the old per-reset world-pose jitter NEVER moved the rendered
+    image — verified empirically 2026-07-22 (a manual 5 cm write left
+    `pos_w` and the render byte-identical). `set_local_poses` always goes
+    through USD, which the renderer reads.
     """
-    sensor = env.scene[sensor_name]
-    if env_ids is None:
-        env_ids = torch.arange(env.num_envs, device=env.device)
 
-    pos_w = sensor.data.pos_w[env_ids]
-    quat_w = sensor.data.quat_w_world[env_ids]
+    def __init__(self, cfg: "EventTermCfg", env: "ManagerBasedEnv"):
+        super().__init__(cfg, env)
+        self._applied = False
 
-    pos_std_t = torch.tensor(pos_std, device=env.device, dtype=pos_w.dtype)
-    rpy_std_t = torch.tensor(rpy_std, device=env.device, dtype=pos_w.dtype)
+    def __call__(
+        self,
+        env: "ManagerBasedEnv",
+        env_ids: torch.Tensor,
+        sensor_name: str,
+        pos_std: tuple[float, float, float],
+        rpy_std: tuple[float, float, float],
+    ):
+        if self._applied:
+            return
+        self._applied = True
 
-    pos_noise = torch.randn_like(pos_w) * pos_std_t
-    new_pos = pos_w + pos_noise
+        sensor = env.scene[sensor_name]
+        view = sensor._view  # XformPrimView; local-pose ops use USD in all modes
+        loc_t, loc_q = view.get_local_poses()
+        n = loc_t.shape[0]
+        dev, dtype = loc_t.device, loc_t.dtype
 
-    rpy_noise = torch.randn(len(env_ids), 3, device=env.device, dtype=pos_w.dtype) * rpy_std_t
-    delta_quat = math_utils.quat_from_euler_xyz(
-        rpy_noise[:, 0], rpy_noise[:, 1], rpy_noise[:, 2]
-    )
-    new_quat = math_utils.quat_mul(quat_w, delta_quat)
+        pos_std_t = torch.tensor(pos_std, device=dev, dtype=dtype)
+        rpy_std_t = torch.tensor(rpy_std, device=dev, dtype=dtype)
 
-    sensor.set_world_poses(new_pos, new_quat, env_ids=env_ids, convention="world")
+        new_t = loc_t + torch.randn(n, 3, device=dev, dtype=dtype) * pos_std_t
+        rpy = torch.randn(n, 3, device=dev, dtype=dtype) * rpy_std_t
+        delta_q = math_utils.quat_from_euler_xyz(rpy[:, 0], rpy[:, 1], rpy[:, 2])
+        new_q = math_utils.quat_mul(loc_q, delta_q)
+
+        view.set_local_poses(new_t, new_q)
+
+
+class randomize_weed_color(ManagerTermBase):
+    """Per-env diffuseColor jitter for the weed prop, resampled on reset.
+
+    `RigidObject` exposes no `.prims`, so the per-env weed prims are resolved
+    lazily by path pattern on first call and their `diffuseColor` shader
+    attrs cached. Keep `variation` small: the weed must stay inside the
+    (possibly widened) green HSV band or the target goes invisible to the
+    actor while the critic still sees ground truth.
+
+    If the cloner shared one material across envs (instanced spawn), every
+    env resolves to the same attr — the jitter then degrades gracefully to a
+    global per-reset jitter, which still decorrelates over time.
+    """
+
+    def __init__(self, cfg: "EventTermCfg", env: "ManagerBasedEnv"):
+        super().__init__(cfg, env)
+        self._attrs: list | None = None
+
+    def _resolve_attrs(self, env: "ManagerBasedEnv", asset_name: str) -> list:
+        import re
+
+        import isaaclab.sim as sim_utils
+
+        pattern = env.scene[asset_name].cfg.prim_path.format(ENV_REGEX_NS="/World/envs/env_.*")
+        prims = sim_utils.find_matching_prims(pattern)
+
+        def env_index(prim) -> int:
+            m = re.search(r"env_(\d+)", str(prim.GetPath()))
+            return int(m.group(1)) if m else 0
+
+        attrs = [None] * len(prims)
+        for prim in prims:
+            attrs[env_index(prim)] = _find_diffuse_color_attr(prim)
+        return attrs
+
+    def __call__(
+        self,
+        env: "ManagerBasedEnv",
+        env_ids: torch.Tensor,
+        asset_cfg: SceneEntityCfg,
+        base_color: tuple[float, float, float],
+        variation: float,
+    ):
+        if self._attrs is None:
+            self._attrs = self._resolve_attrs(env, asset_cfg.name)
+        if env_ids is None:
+            env_ids = torch.arange(env.num_envs, device=env.device)
+        for i in env_ids.tolist():
+            attr = self._attrs[i] if i < len(self._attrs) else None
+            if attr is not None:
+                attr.Set(_balanced_color_jitter(base_color, variation))
+
+
+class randomize_weed_scale(ManagerTermBase):
+    """Per-env static uniform scale on the weed prim, baked once at startup.
+
+    Same sim2real logic as the camera mount offset: each printed weed has
+    one fixed size, so size is a constant per-env bias, not per-episode
+    noise — and the real props come in several sizes. The weed USD origin
+    is the canopy point the reach reward tracks, so scaling about the prim
+    origin leaves the target position exact; only the visual footprint
+    (mask blob size, canopy-to-mat extent) changes. Physics never reads the
+    scale: collision and gravity are disabled on the weed.
+    """
+
+    def __init__(self, cfg: "EventTermCfg", env: "ManagerBasedEnv"):
+        super().__init__(cfg, env)
+        self._applied = False
+
+    def __call__(
+        self,
+        env: "ManagerBasedEnv",
+        env_ids: torch.Tensor,
+        asset_cfg: SceneEntityCfg,
+        scale_range: tuple[float, float] = (0.5, 1.5),
+    ):
+        if self._applied:
+            return
+        self._applied = True
+
+        from pxr import Gf, UsdGeom
+
+        import isaaclab.sim as sim_utils
+
+        pattern = env.scene[asset_cfg.name].cfg.prim_path.format(
+            ENV_REGEX_NS="/World/envs/env_.*"
+        )
+        for prim in sim_utils.find_matching_prims(pattern):
+            s = random.uniform(*scale_range)
+            xf = UsdGeom.Xformable(prim)
+            scale_op = next(
+                (o for o in xf.GetOrderedXformOps() if o.GetOpType() == UsdGeom.XformOp.TypeScale),
+                None,
+            )
+            if scale_op is None:
+                # Appends after translate/orient -> standard T-O-S order.
+                scale_op = xf.AddScaleOp()
+                base = Gf.Vec3f(1.0, 1.0, 1.0)
+            else:
+                base = scale_op.Get() or Gf.Vec3f(1.0, 1.0, 1.0)
+            scale_op.Set(Gf.Vec3f(base[0] * s, base[1] * s, base[2] * s))
+
+
+class randomize_robot_color(ManagerTermBase):
+    """Per-env jitter of every robot visual material's diffuseColor on reset.
+
+    The robot USD carries per-link UsdPreviewSurface shaders under
+    `<Robot>/Looks/*/PBRShader` (authored by scripts/apply_materials.py);
+    scene cloning gives each env its own copy, so the jitter is genuinely
+    per-env. Keep `variation` <= 0.05: the red link material must not drift
+    toward the green HSV band or it spoofs the mask.
+    """
+
+    def __init__(self, cfg: "EventTermCfg", env: "ManagerBasedEnv"):
+        super().__init__(cfg, env)
+        # per env: list of (attr, base_color) for every robot material
+        self._per_env: list | None = None
+
+    def _resolve(self, env: "ManagerBasedEnv", asset_name: str) -> list:
+        import re
+
+        import isaaclab.sim as sim_utils
+
+        pattern = (
+            env.scene[asset_name].cfg.prim_path.format(ENV_REGEX_NS="/World/envs/env_.*")
+            + "/Looks/.*/PBRShader"
+        )
+        per_env = [[] for _ in range(env.num_envs)]
+        for prim in sim_utils.find_matching_prims(pattern):
+            m = re.search(r"env_(\d+)", str(prim.GetPath()))
+            attr = prim.GetAttribute("inputs:diffuseColor")
+            if m and attr.IsValid():
+                per_env[int(m.group(1))].append((attr, tuple(attr.Get())))
+        return per_env
+
+    def __call__(
+        self,
+        env: "ManagerBasedEnv",
+        env_ids: torch.Tensor,
+        asset_cfg: SceneEntityCfg,
+        variation: float = 0.05,
+    ):
+        if self._per_env is None:
+            self._per_env = self._resolve(env, asset_cfg.name)
+        if env_ids is None:
+            env_ids = torch.arange(env.num_envs, device=env.device)
+        for i in env_ids.tolist():
+            for attr, base in self._per_env[i]:
+                attr.Set(_balanced_color_jitter(base, variation))
