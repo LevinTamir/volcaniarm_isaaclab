@@ -147,6 +147,7 @@ def randomize_visual_color_global(
     asset_cfg: SceneEntityCfg,
     base_color: tuple[float, float, float],
     variation: float,
+    brightness_range: tuple[float, float] | None = None,
     roughness_range: tuple[float, float] | None = None,
     metallic_range: tuple[float, float] | None = None,
 ):
@@ -158,16 +159,27 @@ def randomize_visual_color_global(
     onward. The function does nothing per-env-batch; it just samples once
     and writes the attributes.
 
-    `roughness_range` / `metallic_range` (stage-2 DR) jitter the same-named
-    PreviewSurface inputs — e.g. the mat stays black but sweeps matte
-    rubber to semi-gloss. Defaults None → stage-1 behavior unchanged.
+    Stage-2 DR extras (defaults None -> stage-1 behavior unchanged):
+    - `brightness_range`: resample the base color's mean level (hue kept) —
+      "different blacks" for the mat. Chroma stays governed by `variation`,
+      which must stay SMALL for the mat: a chroma jitter on a near-black
+      base creates saturated dark colors, and a greenish dark mat under
+      bright light lands inside the mask's HSV band and floods the whole
+      frame for the episode (verified on rendered frames 2026-07-23).
+    - `roughness_range` / `metallic_range`: jitter the same-named
+      PreviewSurface inputs — matte rubber to semi-gloss.
     """
     asset: AssetBase = env.scene[asset_cfg.name]
     prim = asset.prims[0]
     color_attr = _find_diffuse_color_attr(prim)
     if color_attr is None:
         return
-    color = _balanced_color_jitter(base_color, variation)
+    base = base_color
+    if brightness_range is not None:
+        mean = max(sum(base) / 3.0, 1e-6)
+        scale = random.uniform(*brightness_range) / mean
+        base = tuple(min(1.0, c * scale) for c in base)
+    color = _balanced_color_jitter(base, variation)
     color_attr.Set(color)
     if roughness_range is not None:
         attr = _find_shader_attr(prim, "roughness")
@@ -186,6 +198,7 @@ def randomize_light(
     intensity_range: tuple[float, float],
     color_base: tuple[float, float, float] = (1.0, 1.0, 1.0),
     color_variation: float = 0.0,
+    temp_variation: float = 0.0,
     elevation_range_deg: tuple[float, float] | None = None,
     azimuth_range_deg: tuple[float, float] = (0.0, 360.0),
     angle_range: tuple[float, float] | None = None,
@@ -194,6 +207,16 @@ def randomize_light(
 
     Lights are global scene assets — one prim, one set per call. Useful for
     `DomeLightCfg` / `DistantLightCfg`.
+
+    Color jitter comes in two flavours:
+    - `color_variation`: balanced (brightness-preserving) RGB jitter. Free
+      hue — CAN land on a green/cyan cast, which tints the achromatic mat
+      into the mask's HSV band and floods the whole frame for the episode
+      (verified on rendered frames 2026-07-23). Keep small.
+    - `temp_variation`: warm<->cool jitter along the color-temperature axis
+      only (r+t, g, b-t). This is what real lighting actually does, and by
+      construction its casts sit at hue 0.0/0.66 — outside the green band —
+      so it can be pushed harder without flooding. Takes precedence.
 
     Stage-2 DR extras (default off):
     - `elevation_range_deg` + `azimuth_range_deg`: re-aim a DistantLight so
@@ -210,10 +233,18 @@ def randomize_light(
     if intensity_attr.IsValid():
         intensity_attr.Set(random.uniform(*intensity_range))
 
-    if color_variation > 0.0:
+    if temp_variation > 0.0 or color_variation > 0.0:
         color_attr = prim.GetAttribute("inputs:color")
         if color_attr.IsValid():
-            color = _balanced_color_jitter(color_base, color_variation)
+            if temp_variation > 0.0:
+                t = random.uniform(-temp_variation, temp_variation)
+                color = (
+                    max(0.0, min(1.0, color_base[0] + t)),
+                    color_base[1],
+                    max(0.0, min(1.0, color_base[2] - t)),
+                )
+            else:
+                color = _balanced_color_jitter(color_base, color_variation)
             color_attr.Set(color)
 
     if angle_range is not None:
@@ -388,23 +419,32 @@ class randomize_weed_scale(ManagerTermBase):
 
         import isaaclab.sim as sim_utils
 
-        pattern = env.scene[asset_cfg.name].cfg.prim_path.format(
-            ENV_REGEX_NS="/World/envs/env_.*"
-        )
-        for prim in sim_utils.find_matching_prims(pattern):
-            s = random.uniform(*scale_range)
+        def scale_op_of(prim):
             xf = UsdGeom.Xformable(prim)
-            scale_op = next(
+            return next(
                 (o for o in xf.GetOrderedXformOps() if o.GetOpType() == UsdGeom.XformOp.TypeScale),
                 None,
             )
-            if scale_op is None:
-                # Appends after translate/orient -> standard T-O-S order.
-                scale_op = xf.AddScaleOp()
-                base = Gf.Vec3f(1.0, 1.0, 1.0)
-            else:
-                base = scale_op.Get() or Gf.Vec3f(1.0, 1.0, 1.0)
-            scale_op.Set(Gf.Vec3f(base[0] * s, base[1] * s, base[2] * s))
+
+        pattern = env.scene[asset_cfg.name].cfg.prim_path.format(
+            ENV_REGEX_NS="/World/envs/env_.*"
+        )
+        prims = sim_utils.find_matching_prims(pattern)
+        # Capture the pre-existing scale ONCE, before any write. The cloner
+        # makes env_1..N reference env_0's prim, so an op authored on env_0
+        # becomes every clone's inherited value — a per-prim read-multiply-
+        # write loop would compound the source draw into the clones
+        # (verified: clone values landed at u_0*u_i, outside the range).
+        base = 1.0
+        for prim in prims:
+            op = scale_op_of(prim)
+            if op is not None and op.Get() is not None:
+                base = float(op.Get()[0])
+                break
+        for prim in prims:
+            s = base * random.uniform(*scale_range)
+            op = scale_op_of(prim) or UsdGeom.Xformable(prim).AddScaleOp()
+            op.Set(Gf.Vec3f(s, s, s))
 
 
 class randomize_robot_color(ManagerTermBase):

@@ -32,8 +32,12 @@ from .reach_vision_ame_env_cfg import AmeEventCfg, VolcaniarmReachVisionAmeEnvCf
 GREEN_JITTER_STAGE2 = dict(
     hue_center=0.060,
     hue_halfwidth=0.050,
-    sat_min=0.120,
-    val_min=0.120,
+    # 0.10, not the once-planned 0.12: these are HALF-RANGES around
+    # sat_min=0.18 / val_min=0.12, and floors of 0.06/0.00 let mildly-lit
+    # mat pixels through — combined with any green-ish cast that floods
+    # whole frames (measured on rendered frames 2026-07-23).
+    sat_min=0.100,
+    val_min=0.100,
 )
 
 # Mask dropout: patches emulate partial occlusion punching holes in the
@@ -92,17 +96,35 @@ class Stage2EventCfg(AmeEventCfg):
         # ~1.5 cm / ~1.7 deg (1 sigma) covers a hand-bolted RealSense mount.
         self.randomize_camera_pose.params["pos_std"] = (0.015, 0.015, 0.015)
         self.randomize_camera_pose.params["rpy_std"] = (0.03, 0.03, 0.03)
-        # Lighting: wider intensity and stronger color casts.
+        # Lighting: wider intensity range; color casts are SMALL and on the
+        # color-temperature axis only. Rationale, measured on rendered
+        # frames 2026-07-23: the mask band (hue 0.315-0.555) includes
+        # teal/cyan, and any green/cool cast on the near-black mat floods
+        # the whole frame for the episode (balanced 0.20 flooded most
+        # episodes; balanced 0.10 ~1/2; temp 0.15 still flooded because the
+        # sun's base already has green at max, making cool casts cyan).
+        # The real camera auto-white-balances global casts away anyway, so
+        # big casts mismodel deploy; residual calibration error is carried
+        # by GREEN_JITTER_STAGE2, and the heavy lifting by intensity,
+        # shadow-direction and mask-dropout DR.
         self.randomize_dome.params["intensity_range"] = (200.0, 700.0)
-        self.randomize_dome.params["color_variation"] = 0.20
+        self.randomize_dome.params["color_variation"] = 0.0
+        self.randomize_dome.params["temp_variation"] = 0.06
         self.randomize_sun.params["intensity_range"] = (500.0, 2200.0)
-        self.randomize_sun.params["color_variation"] = 0.20
+        self.randomize_sun.params["color_variation"] = 0.0
+        self.randomize_sun.params["temp_variation"] = 0.06
         # Shadow direction/length (sun re-aimed per reset) and softness.
         self.randomize_sun.params["elevation_range_deg"] = (30.0, 80.0)
         self.randomize_sun.params["azimuth_range_deg"] = (0.0, 360.0)
         self.randomize_sun.params["angle_range"] = (1.0, 10.0)
-        # Mat: still black, but different blacks — shade + matte-to-semigloss.
-        self.randomize_mat_color.params["variation"] = 0.05
+        # Mat: still black, but different blacks — vary brightness and
+        # matte-to-semigloss, NOT chroma. Even variation=0.02 is huge
+        # RELATIVE to a 0.02-0.08 grey (up to ~0.4 saturation on a dark
+        # mat) and was the last remaining mask-flood source in the
+        # 2026-07-23 frame measurements. The physical rubber mat is
+        # achromatic; scene hue variation comes from the light casts.
+        self.randomize_mat_color.params["variation"] = 0.005
+        self.randomize_mat_color.params["brightness_range"] = (0.02, 0.08)
         self.randomize_mat_color.params["roughness_range"] = (0.4, 1.0)
 
 
