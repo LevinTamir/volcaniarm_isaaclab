@@ -107,12 +107,16 @@ class Stage2EventCfg(AmeEventCfg):
         # big casts mismodel deploy; residual calibration error is carried
         # by GREEN_JITTER_STAGE2, and the heavy lifting by intensity,
         # shadow-direction and mask-dropout DR.
+        # temp_variation 0.10 (was 0.06): real D435i frames (2026-07-23)
+        # show the daylight cast leaves the mat at saturation up to ~0.23
+        # even after auto-white-balance — 0.06 under-modelled it. Gated by
+        # the flood check; walk back to 0.08 first if it floods.
         self.randomize_dome.params["intensity_range"] = (200.0, 700.0)
         self.randomize_dome.params["color_variation"] = 0.0
-        self.randomize_dome.params["temp_variation"] = 0.06
+        self.randomize_dome.params["temp_variation"] = 0.10
         self.randomize_sun.params["intensity_range"] = (500.0, 2200.0)
         self.randomize_sun.params["color_variation"] = 0.0
-        self.randomize_sun.params["temp_variation"] = 0.06
+        self.randomize_sun.params["temp_variation"] = 0.10
         # Shadow direction/length (sun re-aimed per reset) and softness.
         self.randomize_sun.params["elevation_range_deg"] = (30.0, 80.0)
         self.randomize_sun.params["azimuth_range_deg"] = (0.0, 360.0)
@@ -123,8 +127,12 @@ class Stage2EventCfg(AmeEventCfg):
         # mat) and was the last remaining mask-flood source in the
         # 2026-07-23 frame measurements. The physical rubber mat is
         # achromatic; scene hue variation comes from the light casts.
+        # brightness top 0.15 (was 0.08): the real camera's auto-exposure
+        # lifts the black mat to rendered V 0.27-0.54 (measured 2026-07-23)
+        # — brighter than the sim ever showed it. Brightness alone is
+        # flood-safe (floods need chroma); gated by the flood check.
         self.randomize_mat_color.params["variation"] = 0.005
-        self.randomize_mat_color.params["brightness_range"] = (0.02, 0.08)
+        self.randomize_mat_color.params["brightness_range"] = (0.02, 0.15)
         self.randomize_mat_color.params["roughness_range"] = (0.4, 1.0)
 
 

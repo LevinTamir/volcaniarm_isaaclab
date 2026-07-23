@@ -59,9 +59,14 @@ GREEN_JITTER = dict(
     val_min=0.080,
 )
 
-# Sim material for the printed weed, bound at spawn via UsdFileCfg. Estimated
-# from the lab photo to sit at hue ~0.42; re-measure alongside GREEN_NOMINAL.
-WEED_COLOR = (0.24, 0.75, 0.51)
+# Sim material for the printed weed, bound at spawn via UsdFileCfg.
+# CALIBRATED against real D435i frames of the printed weed (2026-07-23,
+# check_mask_on_frames.py): real weed body hue median 0.374 (p05 0.259,
+# p95 0.430). Same S/V as the old estimate, hue moved 0.421 -> 0.374 to
+# match — with the (kept) GREEN_NOMINAL band this makes the SIM blob
+# strength ~0.8, matching the MEASURED real blob peak 0.82, instead of the
+# old saturated ~0.95. Train-time mask statistics == deploy-time.
+WEED_COLOR = (0.24, 0.75, 0.36)
 
 # Matte black rubber mat. Near-zero saturation, so it never trips the green
 # mask regardless of exact value; high roughness keeps it non-reflective.

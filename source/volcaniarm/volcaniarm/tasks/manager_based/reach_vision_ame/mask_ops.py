@@ -57,8 +57,16 @@ LCC_KERNEL = 7
 # against the black mat — the mat is ~(0.04,0.04,0.04), effectively zero
 # saturation, so it cannot enter the band however low the value gate goes.
 #
-# TODO(calibration): re-measure against a real RealSense frame of the printed
-# weed. These numbers describe Isaac's renderer, not the physical camera.
+# CALIBRATED against real D435i frames (2026-07-23, 5 frames via
+# grab_camera_frames.py + a hue_center x hue_halfwidth sweep with deploy
+# metrics: post-isolate blob strength/size, peak-on-weed, background
+# leakage). The real printed weed renders with hue spread 0.26-0.50 (dark
+# body ~0.374, bright saturated highlights ~0.50); the bright pixels
+# dominate the blob, and THIS band measured optimal or equal-best on every
+# metric (peak 0.82, clean single blob, zero mat response — the mat's
+# blue-daylight cast at hue 0.49-0.54 falls inside the band but is
+# rejected by the saturation gate: mat S<=0.23 vs weed S~0.31-0.51).
+# Recentering toward the body median only weakened the blob. KEEP AS IS.
 GREEN_NOMINAL = dict(
     hue_center=0.435,      # OpenCV H ~78
     hue_halfwidth=0.120,   # covers H ~57..100; still admits natural green at 60
