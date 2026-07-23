@@ -110,3 +110,37 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         desired_kl=0.01,
         max_grad_norm=1.0,
     )
+
+
+@configclass
+class Stage2PPORunnerCfg(PPORunnerCfg):
+    """Stage-2 fine-tuning runner (task id -v1).
+
+    `experiment_name` is inherited UNCHANGED on purpose: both stages must
+    share logs/reach_vision_ame/rsl_rl/volcaniarm_reach_vision_ame/ so
+    `--resume --load_run <stage1_run>` (and play/export checkpoint
+    discovery) can see stage-1 runs. The run_name suffix is what tells the
+    stages apart in TensorBoard.
+
+    NOTE: rsl_rl treats `max_iterations` as ADDITIVE on resume
+    (tot = start_iter + N), so 300 means 300 EXTRA iterations — resuming
+    model_700 ends at ~model_1000. Paper-aligned budget: the AME paper
+    fine-tunes for ~20% of stage-1 epochs; 300/1000 leaves margin for the
+    extra DR axes (weed scale, shadows, arm color).
+
+    The DR shock will spike KL early on and the adaptive schedule will cut
+    the LR — expect ~20 noisy iterations; if the policy visibly collapses
+    instead, drop algorithm.learning_rate to 1e-4 here.
+    """
+
+    max_iterations = 300
+    run_name = "stage2_dr"
+
+    def __post_init__(self):
+        parent_post_init = getattr(super(), "__post_init__", None)
+        if parent_post_init is not None:
+            parent_post_init()
+        # Paper scales the entropy coef ~0.4x for the fine-tune stage
+        # (0.005 -> 0.002 there; 0.01 -> 0.004 here): explore less, keep
+        # the stage-1 behavior while adapting to the DR.
+        self.algorithm.entropy_coef = 0.004
